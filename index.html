@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta 광고 대시보드 - 실시간 모니터링</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            color: #667eea;
+            margin: 0;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #f0f4ff;
+            border-radius: 50px;
+            font-weight: 600;
+        }
+
+        .status-badge.active {
+            background: #e6f7e6;
+            color: #27ae60;
+        }
+
+        .status-badge.inactive {
+            background: #ffe6e6;
+            color: #e74c3c;
+        }
+
+        .pulse {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .pulse.active {
+            background: #27ae60;
+        }
+
+        .pulse.inactive {
+            background: #e74c3c;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .info-row {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .filter-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .campaigns-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .campaign-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+            border-left: 5px solid #ddd;
+        }
+
+        .campaign-card:hover {
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+            transform: translateY(-5px);
+        }
+
+        .campaign-card.active {
+            border-left-color: #27ae60;
+            background: linear-gradient(135deg, #f9fff9 0%, #ffffff 100%);
+        }
+
+        .campaign-card.inactive {
+            border-left-color: #e74c3c;
+            background: linear-gradient(135deg, #fff9f9 0%, #ffffff 100%);
+        }
+
+        .campaign-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .campaign-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+            flex: 1;
+            word-break: break-word;
+        }
+
+        .campaign-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .campaign-status.on {
+            background: #e6f7e6;
+            color: #27ae60;
+        }
+
+        .campaign-status.off {
+            background: #ffe6e6;
+            color: #e74c3c;
+        }
+
+        .campaign-details {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .detail-label {
+            font-size: 13px;
+            color: #999;
+        }
+
+        .detail-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .toggle-btn {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .toggle-btn.on {
+            border-color: #27ae60;
+            color: #27ae60;
+            background: #f0fff0;
+        }
+
+        .toggle-btn.on:hover {
+            background: #27ae60;
+            color: white;
+        }
+
+        .toggle-btn.off {
+            border-color: #e74c3c;
+            color: #e74c3c;
+            background: #fff0f0;
+        }
+
+        .toggle-btn.off:hover {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .refresh-info {
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .refresh-time {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .campaigns-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .info-row {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .header-top {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-top">
+                <h1>📊 Meta 광고 대시보드</h1>
+                <div class="status-badge active">
+                    <span class="pulse active"></span>
+                    실시간 모니터링 중
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-item">
+                    <span class="info-label">마지막 갱신</span>
+                    <span class="info-value" id="lastUpdate">방금 전</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">다음 갱신</span>
+                    <span class="info-value" id="nextUpdate">5분 후</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">현재 시각</span>
+                    <span class="info-value" id="currentTime">--:--:--</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="filter-btn active" onclick="filterCampaigns('all')">모두</button>
+                <button class="filter-btn" onclick="filterCampaigns('on')">● 활성 중</button>
+                <button class="filter-btn" onclick="filterCampaigns('off')">● 일시중지</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="stat-number" id="totalCampaigns">0</div>
+                    <div class="stat-label">전체 캠페인</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="activeCampaigns">0</div>
+                    <div class="stat-label">활성 중</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="inactiveCampaigns">0</div>
+                    <div class="stat-label">일시중지</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="totalSpend">$0</div>
+                    <div class="stat-label">총 지출</div>
+                </div>
+            </div>
+
+            <div class="refresh-info">
+                <span>자동 갱신 중 (5분 주기) • 다음 갱신: <span class="refresh-time" id="refreshCountdown">5분</span></span>
+            </div>
+        </div>
+
+        <div class="campaigns-grid" id="campaignsList">
+            <!-- 캠페인 카드가 여기 들어갑니다 -->
+        </div>
+    </div>
+
+    <script>
+        // 📌 필터링 조건: 'V_'는 포함, 'E_'는 제외
+        // (자동으로 적용됨 - 수정할 필요 없음)
+
+        // 더미 데이터
+        let campaigns = [
+            // V_로 시작 (E_ 없음) - 보여짐 ✅
+            { id: 1, name: 'V_Summer_Video_Campaign', status: 'ON', spend: 1234, impressions: 45230, clicks: 1203, ctr: 2.66 },
+            { id: 2, name: 'V_Display_Ads_Korean', status: 'OFF', spend: 567, impressions: 12450, clicks: 89, ctr: 0.71 },
+            { id: 3, name: 'V_Retargeting_Website', status: 'ON', spend: 890, impressions: 23100, clicks: 456, ctr: 1.97 },
+            { id: 4, name: 'V_Shopping_Dynamic_Feed', status: 'ON', spend: 2100, impressions: 67800, clicks: 2341, ctr: 3.45 },
+
+            // E_로 시작 (보여지지 않음) ❌
+            { id: 5, name: 'E_Email_Newsletter', status: 'OFF', spend: 3400, impressions: 125600, clicks: 1230, ctr: 0.98 },
+            { id: 6, name: 'E_Event_Promotion', status: 'ON', spend: 1567, impressions: 89200, clicks: 3456, ctr: 3.88 },
+
+            // V_를 포함하지만 E_도 포함 (보여지지 않음) ❌
+            { id: 7, name: 'V_Email_Sequence_E_V_Campaign', status: 'OFF', spend: 890, impressions: 34500, clicks: 234, ctr: 0.68 },
+
+            // V_, E_ 둘 다 없음 (보여지지 않음) ❌
+            { id: 8, name: 'B2B_Lead_Generation', status: 'ON', spend: 4500, impressions: 156200, clicks: 4567, ctr: 2.93 },
+
+            // 추가: V_로 시작 (E_ 없음) - 보여짐 ✅
+            { id: 9, name: 'V_Mobile_App_Install', status: 'ON', spend: 2300, impressions: 78900, clicks: 1890, ctr: 2.39 },
+            { id: 10, name: 'V_Brand_Awareness_Video', status: 'OFF', spend: 1800, impressions: 56700, clicks: 890, ctr: 1.57 },
+        ];
+
+        // 📌 필터링 함수: V_가 있고 E_가 없는 캠페인만
+        function matchesCampaignFilter(campaignName) {
+            return campaignName.includes('V_') && !campaignName.includes('E_');
+        }
+
+        let currentFilter = 'all';
+        let refreshInterval;
+        let countdownInterval;
+
+        // 초기화
+        function init() {
+            updateClock();
+            renderCampaigns();
+            updateStats();
+
+            // 1초마다 시간 업데이트
+            setInterval(updateClock, 1000);
+
+            // 5분마다 데이터 갱신
+            scheduleRefresh();
+
+            // 카운트다운 업데이트
+            updateCountdown();
+            countdownInterval = setInterval(updateCountdown, 1000);
+        }
+
+        // 시간 업데이트
+        function updateClock() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('currentTime').textContent = `${hours}:${minutes}:${seconds}`;
+        }
+
+        // 캠페인 렌더링
+        function renderCampaigns() {
+            const list = document.getElementById('campaignsList');
+
+            // 📌 1단계: V_가 있고 E_가 없는 캠페인만 필터링
+            const filtered = campaigns.filter(c => {
+                // V_/E_ 필터링 (필수)
+                if (!matchesCampaignFilter(c.name)) return false;
+
+                // 상태 필터링 (선택)
+                if (currentFilter === 'on') return c.status === 'ON';
+                if (currentFilter === 'off') return c.status === 'OFF';
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1;">
+                        <div class="empty-state-icon">📭</div>
+                        <h3>캠페인이 없습니다</h3>
+                        <p>필터를 변경해보세요</p>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = filtered.map(campaign => `
+                <div class="campaign-card ${campaign.status === 'ON' ? 'active' : 'inactive'}">
+                    <div class="campaign-header">
+                        <span class="campaign-name">${campaign.name}</span>
+                        <span class="campaign-status ${campaign.status === 'ON' ? 'on' : 'off'}">
+                            ● ${campaign.status === 'ON' ? '활성' : '중지'}
+                        </span>
+                    </div>
+                    <div class="campaign-details">
+                        <div class="detail-item">
+                            <span class="detail-label">지출</span>
+                            <span class="detail-value">$${campaign.spend.toLocaleString()}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">노출</span>
+                            <span class="detail-value">${campaign.impressions.toLocaleString()}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">클릭</span>
+                            <span class="detail-value">${campaign.clicks.toLocaleString()}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">클릭률</span>
+                            <span class="detail-value">${campaign.ctr.toFixed(2)}%</span>
+                        </div>
+                    </div>
+                    <button class="toggle-btn ${campaign.status === 'ON' ? 'on' : 'off'}" onclick="toggleCampaign(${campaign.id})">
+                        ${campaign.status === 'ON' ? '중지' : '활성화'}
+                    </button>
+                </div>
+            `).join('');
+
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('ko-KR');
+        }
+
+        // 통계 업데이트 (V_/E_ 필터링된 캠페인만 포함)
+        function updateStats() {
+            // 📌 V_/E_ 필터링 적용
+            const filtered = campaigns.filter(c => matchesCampaignFilter(c.name));
+
+            const active = filtered.filter(c => c.status === 'ON').length;
+            const inactive = filtered.filter(c => c.status === 'OFF').length;
+            const total = filtered.length;
+            const totalSpend = filtered.reduce((sum, c) => sum + c.spend, 0);
+
+            document.getElementById('totalCampaigns').textContent = total;
+            document.getElementById('activeCampaigns').textContent = active;
+            document.getElementById('inactiveCampaigns').textContent = inactive;
+            document.getElementById('totalSpend').textContent = `$${totalSpend.toLocaleString()}`;
+        }
+
+        // 캠페인 상태 토글
+        function toggleCampaign(id) {
+            const campaign = campaigns.find(c => c.id === id);
+            if (campaign) {
+                campaign.status = campaign.status === 'ON' ? 'OFF' : 'ON';
+                renderCampaigns();
+                updateStats();
+            }
+        }
+
+        // 필터링
+        function filterCampaigns(filter) {
+            currentFilter = filter;
+
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            renderCampaigns();
+        }
+
+        // 갱신 스케줄
+        function scheduleRefresh() {
+            refreshInterval = setInterval(() => {
+                // 시뮬레이션: 무작위로 일부 캠페인 상태 변경
+                const randomCampaign = campaigns[Math.floor(Math.random() * campaigns.length)];
+                if (Math.random() > 0.7) {
+                    randomCampaign.status = randomCampaign.status === 'ON' ? 'OFF' : 'ON';
+                }
+
+                // 지출액 약간 증가
+                campaigns.forEach(c => {
+                    if (c.status === 'ON') {
+                        c.spend += Math.floor(Math.random() * 50);
+                        c.impressions += Math.floor(Math.random() * 500);
+                        c.clicks += Math.floor(Math.random() * 20);
+                    }
+                });
+
+                renderCampaigns();
+                updateStats();
+            }, 5 * 60 * 1000); // 5분
+        }
+
+        // 카운트다운 업데이트
+        function updateCountdown() {
+            const now = Date.now();
+            const nextRefresh = Math.ceil(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
+            const remaining = Math.max(0, Math.ceil((nextRefresh - now) / 1000));
+
+            const minutes = Math.floor(remaining / 60);
+            const seconds = remaining % 60;
+
+            document.getElementById('refreshCountdown').textContent =
+                `${minutes}분 ${seconds}초`;
+            document.getElementById('nextUpdate').textContent =
+                `${minutes}분 ${seconds}초 후`;
+        }
+
+        // 페이지 로드 시 초기화
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
