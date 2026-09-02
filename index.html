@@ -399,7 +399,34 @@
             <!-- 캠페인 카드가 여기 들어갑니다 -->
         </div>
     </div>
+// Vercel API 설정
+const VERCEL_API_URL = 'https://meta-ads-dashboard-backend.vercel.app/api/meta';
+const USE_META_API = true; // true면 실제 API 사용
 
+// Meta API에서 데이터 가져오기
+async function fetchMetaData() {
+    try {
+        const response = await fetch(`${VERCEL_API_URL}`);
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
+        }
+        const data = await response.json();
+        if (data.campaigns) {
+            campaigns = data.campaigns.map(ad => ({
+                id: ad.id,
+                name: ad.name || `캠페인`,
+                status: ad.status === 'ACTIVE' ? 'ON' : 'OFF',
+                spend: Math.round(ad.spend || 0),
+                impressions: ad.impressions || 0,
+                clicks: ad.clicks || 0,
+                ctr: ad.ctr || 0
+            }));
+            console.log('✅ Meta API 데이터 로드 완료:', campaigns.length, '개 캠페인');
+        }
+    } catch (error) {
+        console.error('❌ Meta API 오류:', error);
+    }
+}
     <script>
         // 📌 필터링 조건: 'V_'는 포함, 'E_'는 제외
         // (자동으로 적용됨 - 수정할 필요 없음)
@@ -446,7 +473,28 @@
             setInterval(updateClock, 1000);
 
             // 5분마다 데이터 갱신
-            scheduleRefresh();
+            function scheduleRefresh() {
+    refreshInterval = setInterval(async () => {
+        if (USE_META_API) {
+            await fetchMetaData();
+        } else {
+            // 시뮬레이션
+            const randomCampaign = campaigns[Math.floor(Math.random() * campaigns.length)];
+            if (Math.random() > 0.7) {
+                randomCampaign.status = randomCampaign.status === 'ON' ? 'OFF' : 'ON';
+            }
+            campaigns.forEach(c => {
+                if (c.status === 'ON') {
+                    c.spend += Math.floor(Math.random() * 50);
+                    c.impressions += Math.floor(Math.random() * 500);
+                    c.clicks += Math.floor(Math.random() * 20);
+                }
+            });
+        }
+        renderCampaigns();
+        updateStats();
+    }, 5 * 60 * 1000);
+};
 
             // 카운트다운 업데이트
             updateCountdown();
