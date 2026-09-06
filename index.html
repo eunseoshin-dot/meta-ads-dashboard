@@ -1,222 +1,332 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meta 광고 대시보드</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { background: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        .header h1 { font-size: 32px; color: #667eea; margin-bottom: 20px; }
-        .info-row { display: flex; gap: 40px; flex-wrap: wrap; margin-bottom: 20px; }
-        .info-item { display: flex; flex-direction: column; gap: 5px; }
-        .info-label { font-size: 12px; color: #999; text-transform: uppercase; }
-        .info-value { font-size: 18px; font-weight: 600; color: #333; }
-        .controls { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
-        .filter-btn { padding: 8px 16px; border: 2px solid #667eea; background: white; color: #667eea; border-radius: 25px; cursor: pointer; font-weight: 600; }
-        .filter-btn.active { background: #667eea; color: white; }
-        .campaigns-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        .campaign-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-left: 5px solid #ddd; }
-        .campaign-card.active { border-left-color: #27ae60; background: linear-gradient(135deg, #f9fff9 0%, #ffffff 100%); }
-        .campaign-card.inactive { border-left-color: #e74c3c; background: linear-gradient(135deg, #fff9f9 0%, #ffffff 100%); }
-        .campaign-header { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 15px; }
-        .campaign-name { font-size: 18px; font-weight: 700; flex: 1; }
-        .campaign-status { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
-        .campaign-status.on { background: #e6f7e6; color: #27ae60; }
-        .campaign-status.off { background: #ffe6e6; color: #e74c3c; }
-        .campaign-details { display: grid; gap: 12px; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
-        .detail-item { display: flex; justify-content: space-between; }
-        .detail-label { font-size: 13px; color: #999; }
-        .detail-value { font-size: 16px; font-weight: 600; }
-        .toggle-btn { width: 100%; padding: 12px; border: 2px solid #ddd; background: white; border-radius: 8px; font-weight: 600; cursor: pointer; }
-        .toggle-btn.on { border-color: #27ae60; color: #27ae60; background: #f0fff0; }
-        .toggle-btn.off { border-color: #e74c3c; color: #e74c3c; background: #fff0f0; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 20px; }
-        .stat-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; text-align: center; }
-        .stat-number { font-size: 28px; font-weight: 700; margin-bottom: 5px; }
-        .stat-label { font-size: 12px; opacity: 0.9; }
-        .refresh-info { text-align: center; color: #999; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
-        .refresh-time { font-weight: 600; color: #667eea; }
-        .empty-state { text-align: center; padding: 60px 20px; color: #999; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meta 광고 소재 대시보드</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Malgun Gothic',sans-serif;
+    background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+    min-height:100vh; padding:20px; color:#262019;
+  }
+  .container{ max-width:1300px; margin:0 auto; }
+  .header{ background:#fff; padding:28px 30px; border-radius:14px; margin-bottom:24px; box-shadow:0 4px 20px rgba(0,0,0,.1); }
+  .header h1{ font-size:26px; color:#4c3d8f; margin-bottom:16px; }
+  .info-row{ display:flex; gap:36px; flex-wrap:wrap; margin-bottom:16px; }
+  .info-item{ display:flex; flex-direction:column; gap:4px; }
+  .info-label{ font-size:11px; color:#999; text-transform:uppercase; letter-spacing:.5px; }
+  .info-value{ font-size:16px; font-weight:700; }
+  .controls{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .filter-btn{ padding:7px 16px; border:2px solid #667eea; background:#fff; color:#667eea; border-radius:20px; cursor:pointer; font-weight:600; font-size:13px; }
+  .filter-btn.active{ background:#667eea; color:#fff; }
+  .stats{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .stat-box{ background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:#fff; padding:16px; border-radius:10px; text-align:center; }
+  .stat-number{ font-size:24px; font-weight:800; }
+  .stat-label{ font-size:11px; opacity:.9; margin-top:2px; }
+  .refresh-info{ text-align:center; color:#999; font-size:12px; margin-top:14px; padding-top:14px; border-top:1px solid #eee; }
+  .refresh-time{ font-weight:700; color:#667eea; }
+
+  .campaign-block{ background:#fff; border-radius:14px; margin-bottom:20px; box-shadow:0 4px 20px rgba(0,0,0,.08); overflow:hidden; }
+  .campaign-head{ padding:18px 24px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; border-bottom:1px solid #eee; background:#f8f7fc; }
+  .campaign-name{ font-size:16px; font-weight:800; color:#33285c; }
+  .campaign-meta{ display:flex; gap:20px; flex-wrap:wrap; font-size:12px; color:#666; }
+  .campaign-meta b{ color:#262019; font-size:13px; }
+
+  .ad-table{ width:100%; overflow-x:auto; }
+  table{ width:100%; border-collapse:collapse; min-width:1180px; }
+  thead th{ text-align:left; font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.4px; padding:10px 14px; border-bottom:2px solid #eee; }
+  tbody td{ padding:12px 14px; font-size:13px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+  tbody tr:last-child td{ border-bottom:none; }
+  .ad-name{ font-weight:600; max-width:320px; }
+  .num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .status-pill{ display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:14px; font-size:11px; font-weight:700; white-space:nowrap; }
+  .status-pill.on{ background:#e6f7e6; color:#27ae60; }
+  .status-pill.off{ background:#f0f0f0; color:#888; }
+  .signal{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:4px 10px; border-radius:12px; white-space:nowrap; }
+  .signal.good{ background:#e4f0e6; color:#2f7d4f; }
+  .signal.warn{ background:#f8ecd4; color:#a97417; }
+  .signal.critical{ background:#fbe3e1; color:#c0392b; }
+  .signal.new{ background:#eee; color:#888; }
+  .toggle-btn{ padding:6px 14px; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; border:2px solid #ddd; background:#fff; }
+  .toggle-btn.on{ border-color:#e74c3c; color:#e74c3c; }
+  .toggle-btn.off{ border-color:#27ae60; color:#27ae60; }
+  .empty-state{ text-align:center; padding:50px 20px; color:#999; }
+
+  .cafe24-note{ background:#fff8e6; border:1px solid #f0d999; color:#8a6d1f; font-size:12px; padding:10px 24px; }
+  .cafe24-banner{ background:#fff3e0; border:1px solid #f3c98b; color:#8a5a1f; font-size:12.5px; padding:10px 16px; border-radius:8px; margin-bottom:16px; }
+  .cafe24-cell{ color:#7a4fae; }
+  .cafe24-missing{ color:#bbb; font-style:italic; }
+
+  @media (max-width:768px){ .header h1{ font-size:20px; } }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📊 Meta 광고 대시보드</h1>
-            <div class="info-row">
-                <div class="info-item">
-                    <span class="info-label">마지막 갱신</span>
-                    <span class="info-value" id="lastUpdate">방금 전</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">현재 시각</span>
-                    <span class="info-value" id="currentTime">--:--:--</span>
-                </div>
-            </div>
-            <div class="controls">
-                <button class="filter-btn active" onclick="filterCampaigns('all')">모두</button>
-                <button class="filter-btn" onclick="filterCampaigns('on')">● 활성 중</button>
-                <button class="filter-btn" onclick="filterCampaigns('off')">● 일시중지</button>
-            </div>
-            <div class="stats">
-                <div class="stat-box">
-                    <div class="stat-number" id="totalCampaigns">0</div>
-                    <div class="stat-label">전체 캠페인</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-number" id="activeCampaigns">0</div>
-                    <div class="stat-label">활성 중</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-number" id="inactiveCampaigns">0</div>
-                    <div class="stat-label">일시중지</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-number" id="totalSpend">$0</div>
-                    <div class="stat-label">총 지출</div>
-                </div>
-            </div>
-            <div class="refresh-info">
-                <span>자동 갱신 중 • 다음 갱신: <span class="refresh-time" id="refreshCountdown">5분</span></span>
-            </div>
-        </div>
-        <div class="campaigns-grid" id="campaignsList"></div>
+<div class="container">
+  <div class="header">
+    <h1>📊 Meta 광고 소재 대시보드</h1>
+    <div class="info-row">
+      <div class="info-item"><span class="info-label">마지막 갱신</span><span class="info-value" id="lastUpdate">방금 전</span></div>
+      <div class="info-item"><span class="info-label">현재 시각</span><span class="info-value" id="currentTime">--:--:--</span></div>
+      <div class="info-item"><span class="info-label">기간</span><span class="info-value">최근 7일 (Meta 기준)</span></div>
+      <div class="info-item"><span class="info-label">카페24 데이터 기준일</span><span class="info-value" id="cafe24AsOf">불러오는 중…</span></div>
     </div>
+    <div class="cafe24-banner" id="cafe24Banner" hidden>⏱️ 카페24 구매 데이터는 실시간 반영이 되지 않습니다. 아래 카페24 ROAS·구매 수치는 <b id="cafe24AsOfInline">-</b> 기준으로 집계된 값입니다.<span id="cafe24CsvUploaded"></span></div>
+    <div class="controls">
+      <button class="filter-btn active" onclick="filterAds('all')">모두</button>
+      <button class="filter-btn" onclick="filterAds('on')">● 활성 중</button>
+      <button class="filter-btn" onclick="filterAds('off')">● 일시중지</button>
+    </div>
+    <div class="stats">
+      <div class="stat-box"><div class="stat-number" id="totalAds">0</div><div class="stat-label">전체 소재</div></div>
+      <div class="stat-box"><div class="stat-number" id="activeAds">0</div><div class="stat-label">활성 중</div></div>
+      <div class="stat-box"><div class="stat-number" id="inactiveAds">0</div><div class="stat-label">일시중지</div></div>
+      <div class="stat-box"><div class="stat-number" id="totalSpend">0원</div><div class="stat-label">총 지출</div></div>
+    </div>
+    <div class="refresh-info">자동 갱신 중 (5분 주기) · 다음 갱신: <span class="refresh-time" id="refreshCountdown">5분</span></div>
+  </div>
 
-    <script>
-        const VERCEL_API_URL = 'https://meta-ads-dashboard-backend.vercel.app/api/meta';
-        const USE_META_API = true;
+  <div id="campaignsList"></div>
+</div>
 
-        let campaigns = [
-            { id: 1, name: 'V_Summer_Video_Campaign', status: 'ON', spend: 1234, impressions: 45230, clicks: 1203, ctr: 2.66 },
-            { id: 2, name: 'V_Display_Ads_Korean', status: 'OFF', spend: 567, impressions: 12450, clicks: 89, ctr: 0.71 },
-            { id: 3, name: 'V_Retargeting_Website', status: 'ON', spend: 890, impressions: 23100, clicks: 456, ctr: 1.97 },
-            { id: 4, name: 'V_Shopping_Dynamic_Feed', status: 'ON', spend: 2100, impressions: 67800, clicks: 2341, ctr: 3.45 },
-        ];
+<script>
+const VERCEL_API_URL = 'https://meta-ads-dashboard-backend.vercel.app/api/meta';
+const CAFE24_API_URL = 'https://meta-ads-dashboard-backend.vercel.app/api/cafe24';
+const USE_META_API = true;
 
-  async function fetchMetaData() {
-    try {
-        const response = await fetch(`${VERCEL_API_URL}`);
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
-        const data = await response.json();
-        if (data.campaigns && data.campaigns.length > 0) {
-            campaigns = data.campaigns.map(ad => ({
-                id: ad.id,
-                name: ad.name || '캠페인',
-                status: ad.status === 'ACTIVE' ? 'ON' : 'OFF',
-                spend: Math.round(ad.spend || 0),
-                impressions: ad.impressions || 0,
-                clicks: ad.clicks || 0,
-                ctr: ad.ctr || 0
-            }));
-            console.log('✅ Meta API 데이터 로드:', campaigns.length, '개 캠페인');
-            renderCampaigns();
-            updateStats();
-        }
-    } catch (error) {
-        console.error('❌ API 오류:', error);
+// 원화 표기: 1234567 -> "1,234,567원"
+function formatKRW(n){ return Math.round(n || 0).toLocaleString('ko-KR') + '원'; }
+
+let ads = [
+  // 더미(연결 실패 시 표시): 실제 로드되면 교체됨
+  { id:'1', name:'V_예시_소재', status:'ACTIVE', campaign_name:'V_예시_캠페인', adset_name:'전체', spend:0, impressions:0, clicks:0, ctr:0, cpc:0, purchases:0, metaRoas:null }
+];
+
+// 소재명(광고 이름) -> 카페24 누적 데이터
+let cafe24Map = {};
+let cafe24AsOfDate = null; // 카페24 데이터가 실제로 반영된 마지막 날짜 (YYYY-MM-DD)
+
+async function fetchMetaData(){
+  try{
+    const response = await fetch(VERCEL_API_URL);
+    if(!response.ok) throw new Error('API Error: ' + response.status);
+    const data = await response.json();
+    if(data.ads){
+      ads = data.ads;
+      console.log('✅ Meta API 데이터 로드:', ads.length, '개 소재');
+      renderCampaigns();
+      updateStats();
     }
+  }catch(err){
+    console.error('❌ Meta API 오류:', err);
+  }
 }
 
-        function matchesCampaignFilter(name) {
-            return name.includes('V_') && !name.includes('E_');
-        }
+async function fetchCafe24Data(){
+  const asOfEl = document.getElementById('cafe24AsOf');
+  const asOfInlineEl = document.getElementById('cafe24AsOfInline');
+  const bannerEl = document.getElementById('cafe24Banner');
+  try{
+    const response = await fetch(CAFE24_API_URL);
+    const data = await response.json().catch(()=>({}));
+    if(!response.ok || data.error){ throw new Error(data.error || ('API Error: ' + response.status)); }
+    cafe24Map = data.creatives || {};
+    cafe24AsOfDate = data.asOfDate || null;
+    console.log('✅ 카페24 데이터 로드:', Object.keys(cafe24Map).length, '개 소재, 기준일:', cafe24AsOfDate, '/ CSV 업로드:', data.csvUploadedAt);
+    if(asOfEl) asOfEl.textContent = cafe24AsOfDate ? `${cafe24AsOfDate} 기준` : '기준일 확인 불가';
+    if(asOfInlineEl) asOfInlineEl.textContent = cafe24AsOfDate ? `${cafe24AsOfDate}` : '알 수 없는 날짜';
+    if(bannerEl){
+      bannerEl.hidden = false;
+      if(data.csvUploadedAt){
+        const uploaded = new Date(data.csvUploadedAt);
+        const extra = document.getElementById('cafe24CsvUploaded');
+        if(extra) extra.textContent = ` (CSV 스냅샷 업로드: ${uploaded.toLocaleDateString('ko-KR')} ${uploaded.toLocaleTimeString('ko-KR')})`;
+      }
+    }
+    renderCampaigns();
+  }catch(err){
+    console.error('❌ 카페24 API 오류:', err);
+    if(asOfEl) asOfEl.textContent = '연동 안 됨';
+    if(bannerEl){
+      bannerEl.hidden = false;
+      bannerEl.innerHTML = `⚠️ 카페24 데이터를 불러오지 못했습니다: ${err.message}`;
+    }
+  }
+}
 
-        let currentFilter = 'all';
+function getSignal(ad){
+  if(ad.impressions === 0) return {cls:'new', label:'신규'};
+  if(ad.metaRoas !== null && ad.metaRoas !== undefined){
+    if(ad.metaRoas >= 3) return {cls:'good', label:'우수 ROAS ' + ad.metaRoas.toFixed(2)};
+    if(ad.metaRoas >= 1) return {cls:'warn', label:'보통 ROAS ' + ad.metaRoas.toFixed(2)};
+    return {cls:'critical', label:'저조 ROAS ' + ad.metaRoas.toFixed(2)};
+  }
+  if(ad.spend >= 50000) return {cls:'critical', label:'전환 없음'};
+  return {cls:'warn', label:'관찰 필요'};
+}
 
-        function init() {
-            if (USE_META_API) fetchMetaData();
-            updateClock();
-            renderCampaigns();
-            updateStats();
-            setInterval(updateClock, 1000);
-            setInterval(async () => {
-                if (USE_META_API) await fetchMetaData();
-                renderCampaigns();
-                updateStats();
-            }, 5 * 60 * 1000);
-            setInterval(updateCountdown, 1000);
-            updateCountdown();
-        }
+let currentFilter = 'all';
 
-        function updateClock() {
-            const now = new Date();
-            const h = String(now.getHours()).padStart(2, '0');
-            const m = String(now.getMinutes()).padStart(2, '0');
-            const s = String(now.getSeconds()).padStart(2, '0');
-            document.getElementById('currentTime').textContent = `${h}:${m}:${s}`;
-        }
+function groupByCampaign(list){
+  const map = new Map();
+  list.forEach(ad=>{
+    const key = ad.campaign_id || ad.campaign_name;
+    if(!map.has(key)) map.set(key, { name: ad.campaign_name, ads: [] });
+    map.get(key).ads.push(ad);
+  });
+  return Array.from(map.values());
+}
 
-        function renderCampaigns() {
-            const list = document.getElementById('campaignsList');
-            const filtered = campaigns.filter(c => {
-                if (!matchesCampaignFilter(c.name)) return false;
-                if (currentFilter === 'on') return c.status === 'ON';
-                if (currentFilter === 'off') return c.status === 'OFF';
-                return true;
-            });
+function renderCampaigns(){
+  const list = document.getElementById('campaignsList');
+  const filtered = ads.filter(a=>{
+    if(currentFilter==='on') return a.status==='ACTIVE';
+    if(currentFilter==='off') return a.status==='PAUSED';
+    return true;
+  });
 
-            if (filtered.length === 0) {
-                list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">📭 캠페인이 없습니다</div>';
-                return;
-            }
+  if(filtered.length===0){
+    list.innerHTML = '<div class="campaign-block"><div class="empty-state">📭 표시할 소재가 없습니다</div></div>';
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('ko-KR');
+    return;
+  }
 
-            list.innerHTML = filtered.map(c => `
-                <div class="campaign-card ${c.status === 'ON' ? 'active' : 'inactive'}">
-                    <div class="campaign-header">
-                        <span class="campaign-name">${c.name}</span>
-                        <span class="campaign-status ${c.status === 'ON' ? 'on' : 'off'}">● ${c.status === 'ON' ? '활성' : '중지'}</span>
-                    </div>
-                    <div class="campaign-details">
-                        <div class="detail-item"><span class="detail-label">지출</span><span class="detail-value">$${c.spend.toLocaleString()}</span></div>
-                        <div class="detail-item"><span class="detail-label">노출</span><span class="detail-value">${c.impressions.toLocaleString()}</span></div>
-                        <div class="detail-item"><span class="detail-label">클릭</span><span class="detail-value">${c.clicks.toLocaleString()}</span></div>
-                        <div class="detail-item"><span class="detail-label">CTR</span><span class="detail-value">${c.ctr.toFixed(2)}%</span></div>
-                    </div>
-                    <button class="toggle-btn ${c.status === 'ON' ? 'on' : 'off'}" onclick="toggleCampaign(${c.id})">
-                        ${c.status === 'ON' ? '중지' : '활성화'}
-                    </button>
-                </div>
-            `).join('');
-            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('ko-KR');
-        }
+  const groups = groupByCampaign(filtered);
 
-        function updateStats() {
-            const filtered = campaigns.filter(c => matchesCampaignFilter(c.name));
-            document.getElementById('totalCampaigns').textContent = filtered.length;
-            document.getElementById('activeCampaigns').textContent = filtered.filter(c => c.status === 'ON').length;
-            document.getElementById('inactiveCampaigns').textContent = filtered.filter(c => c.status === 'OFF').length;
-            document.getElementById('totalSpend').textContent = `$${filtered.reduce((s, c) => s + c.spend, 0).toLocaleString()}`;
-        }
+  list.innerHTML = groups.map(g=>{
+    const spend = g.ads.reduce((s,a)=>s+a.spend,0);
+    const impressions = g.ads.reduce((s,a)=>s+a.impressions,0);
+    const clicks = g.ads.reduce((s,a)=>s+a.clicks,0);
+    const ctr = impressions>0 ? (clicks/impressions*100) : 0;
+    const purchases = g.ads.reduce((s,a)=>s+(a.purchases||0),0);
 
-        function toggleCampaign(id) {
-            const c = campaigns.find(x => x.id === id);
-            if (c) {
-                c.status = c.status === 'ON' ? 'OFF' : 'ON';
-                renderCampaigns();
-                updateStats();
-            }
-        }
+    // 카페24 누적치 (매칭된 소재만 합산)
+    let cafe24SpendSum = 0, cafe24RevenueSum = 0, cafe24PurchasesSum = 0, cafe24Matched = 0;
+    g.ads.forEach(ad=>{
+      const c = cafe24Map[ad.name];
+      if(c){ cafe24Matched++; cafe24SpendSum += (c.spend||0); cafe24RevenueSum += (c.cafe24Revenue||0); cafe24PurchasesSum += (c.cafe24Purchases||0); }
+    });
+    const cafe24RoasAgg = cafe24SpendSum>0 ? (cafe24RevenueSum/cafe24SpendSum*100) : null;
 
-        function filterCampaigns(f) {
-            currentFilter = f;
-            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
-            renderCampaigns();
-        }
+    const rows = g.ads.map(ad=>{
+      const sig = getSignal(ad);
+      const isOn = ad.status === 'ACTIVE';
+      const c24 = cafe24Map[ad.name];
+      const cafe24Cell = c24
+        ? `<td class="num cafe24-cell">${c24.cafe24Purchases}건 / ${formatKRW(c24.cafe24Revenue)}</td><td class="num cafe24-cell">${c24.cafe24Roas!=null ? c24.cafe24Roas.toFixed(1)+'%' : '-'}</td>`
+        : `<td class="num cafe24-missing">-</td><td class="num cafe24-missing">매칭없음</td>`;
+      return `
+        <tr>
+          <td class="ad-name">${ad.name}<div style="font-size:11px;color:#999;font-weight:400;">${ad.adset_name||''}</div></td>
+          <td><span class="status-pill ${isOn?'on':'off'}">● ${isOn?'활성':'중지'}</span></td>
+          <td class="num">${formatKRW(ad.spend)}</td>
+          <td class="num">${ad.impressions.toLocaleString()}</td>
+          <td class="num">${ad.clicks.toLocaleString()}</td>
+          <td class="num">${ad.ctr.toFixed(2)}%</td>
+          <td class="num">${formatKRW(ad.cpc)}</td>
+          <td class="num">${ad.purchases} (Meta)</td>
+          ${cafe24Cell}
+          <td><span class="signal ${sig.cls}">● ${sig.label}</span></td>
+          <td><button class="toggle-btn ${isOn?'on':'off'}" onclick="toggleAd('${ad.id}')">${isOn?'중지':'활성화'}</button></td>
+        </tr>`;
+    }).join('');
 
-        function updateCountdown() {
-            const now = Date.now();
-            const next = Math.ceil(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
-            const sec = Math.max(0, Math.ceil((next - now) / 1000));
-            const min = Math.floor(sec / 60);
-            document.getElementById('refreshCountdown').textContent = `${min}분 ${sec % 60}초`;
-        }
+    const cafe24NoteOrStat = cafe24Matched>0
+      ? `<div class="cafe24-note">카페24 누적(${cafe24AsOfDate||'기준일 미상'} 기준, 매칭 ${cafe24Matched}/${g.ads.length}개 소재): 구매 <b>${cafe24PurchasesSum}건</b> · 구매값 <b>${formatKRW(cafe24RevenueSum)}</b> · 카페24 ROAS <b>${cafe24RoasAgg!=null ? cafe24RoasAgg.toFixed(1)+'%' : '-'}</b></div>`
+      : `<div class="cafe24-note">이 캠페인의 소재는 아직 Daily Report(카페24)와 매칭되지 않았습니다. 소재명이 정확히 일치하는지 확인해주세요.</div>`;
 
-        window.addEventListener('DOMContentLoaded', init);
-    </script>
+    return `
+      <div class="campaign-block">
+        <div class="campaign-head">
+          <div class="campaign-name">${g.name}</div>
+          <div class="campaign-meta">
+            <span>지출 <b>${formatKRW(spend)}</b></span>
+            <span>노출 <b>${impressions.toLocaleString()}</b></span>
+            <span>클릭 <b>${clicks.toLocaleString()}</b></span>
+            <span>CTR <b>${ctr.toFixed(2)}%</b></span>
+            <span>구매(Meta 귀속) <b>${purchases}건</b></span>
+          </div>
+        </div>
+        ${cafe24NoteOrStat}
+        <div class="ad-table">
+          <table>
+            <thead><tr>
+              <th>소재명</th><th>상태</th><th>지출</th><th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th><th>구매(Meta)</th><th>구매/구매값(카페24 누적)</th><th>ROAS(카페24 누적)</th><th>신호등(Meta ROAS)</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('ko-KR');
+}
+
+function updateStats(){
+  const total = ads.length;
+  const active = ads.filter(a=>a.status==='ACTIVE').length;
+  const inactive = ads.filter(a=>a.status==='PAUSED').length;
+  const totalSpend = ads.reduce((s,a)=>s+a.spend,0);
+  document.getElementById('totalAds').textContent = total;
+  document.getElementById('activeAds').textContent = active;
+  document.getElementById('inactiveAds').textContent = inactive;
+  document.getElementById('totalSpend').textContent = formatKRW(totalSpend);
+}
+
+function toggleAd(id){
+  const ad = ads.find(a=>a.id===id);
+  if(ad){
+    ad.status = ad.status==='ACTIVE' ? 'PAUSED' : 'ACTIVE';
+    renderCampaigns();
+    updateStats();
+    console.warn('⚠️ 이 토글은 화면 미리보기용입니다. 실제 Meta 계정 상태는 바뀌지 않습니다.');
+  }
+}
+
+function filterAds(f){
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+  renderCampaigns();
+}
+
+function updateClock(){
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('currentTime').textContent = `${h}:${m}:${s}`;
+}
+
+function updateCountdown(){
+  const now = Date.now();
+  const next = Math.ceil(now/(5*60*1000))*(5*60*1000);
+  const remain = Math.max(0, Math.ceil((next-now)/1000));
+  const min = Math.floor(remain/60);
+  document.getElementById('refreshCountdown').textContent = `${min}분 ${remain%60}초`;
+}
+
+function init(){
+  updateClock();
+  renderCampaigns();
+  updateStats();
+  if(USE_META_API){
+    fetchMetaData();
+    fetchCafe24Data();
+  }
+  setInterval(updateClock, 1000);
+  setInterval(updateCountdown, 1000);
+  setInterval(async ()=>{
+    if(USE_META_API){
+      await fetchMetaData();
+      await fetchCafe24Data();
+    }
+  }, 5*60*1000);
+  updateCountdown();
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
 </body>
 </html>
