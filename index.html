@@ -97,27 +97,29 @@
             { id: 4, name: 'V_Shopping_Dynamic_Feed', status: 'ON', spend: 2100, impressions: 67800, clicks: 2341, ctr: 3.45 },
         ];
 
-        async function fetchMetaData() {
-            try {
-                const response = await fetch(`${VERCEL_API_URL}`);
-                if (!response.ok) throw new Error(`API Error: ${response.status}`);
-                const data = await response.json();
-                if (data.campaigns && data.campaigns.length > 0) {
-                    campaigns = data.campaigns.map(ad => ({
-                        id: ad.id,
-                        name: ad.name || '캠페인',
-                        status: ad.status === 'ACTIVE' ? 'ON' : 'OFF',
-                        spend: Math.round(ad.spend || 0),
-                        impressions: ad.impressions || 0,
-                        clicks: ad.clicks || 0,
-                        ctr: ad.ctr || 0
-                    }));
-                    console.log('✅ Meta API 데이터 로드:', campaigns.length, '개 캠페인');
-                }
-            } catch (error) {
-                console.error('❌ API 오류:', error);
-            }
+  async function fetchMetaData() {
+    try {
+        const response = await fetch(`${VERCEL_API_URL}`);
+        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        const data = await response.json();
+        if (data.campaigns && data.campaigns.length > 0) {
+            campaigns = data.campaigns.map(ad => ({
+                id: ad.id,
+                name: ad.name || '캠페인',
+                status: ad.status === 'ACTIVE' ? 'ON' : 'OFF',
+                spend: Math.round(ad.spend || 0),
+                impressions: ad.impressions || 0,
+                clicks: ad.clicks || 0,
+                ctr: ad.ctr || 0
+            }));
+            console.log('✅ Meta API 데이터 로드:', campaigns.length, '개 캠페인');
+            renderCampaigns();
+            updateStats();
         }
+    } catch (error) {
+        console.error('❌ API 오류:', error);
+    }
+}
 
         function matchesCampaignFilter(name) {
             return name.includes('V_') && !name.includes('E_');
