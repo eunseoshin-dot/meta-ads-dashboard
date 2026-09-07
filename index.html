@@ -126,7 +126,7 @@
       <div class="stat-box"><div class="stat-number" id="inactiveAds">0</div><div class="stat-label">중지</div></div>
       <div class="stat-box"><div class="stat-number" id="totalSpend">0원</div><div class="stat-label">총 지출(Meta)</div></div>
     </div>
-    <div class="refresh-info">자동 갱신 중 (5분 주기) · 다음 갱신: <span class="refresh-time" id="refreshCountdown">5분</span></div>
+    <div class="refresh-info">백그라운드 자동 갱신은 꺼져 있어요 — 새로고침(F5)할 때마다 그 순간의 최신 데이터를 다시 불러와요.</div>
   </div>
 
   <div class="trend-block">
@@ -471,6 +471,29 @@ function applyCafe24Range(){
   fetchMetaCumulativeData(); // 지출/노출/클릭/CTR/CPC의 "누적" 값도 새로 설정한 기간으로 다시 불러온다
 }
 
+// 게재상태는 소재 자체의 on/off(status)가 아니라 effective_status로 판단한다.
+// Meta가 계산해주는 effective_status는 "소재 자체는 켜져 있어도 광고그룹이나 캠페인이 꺼져 있으면
+// 실제로는 게재되지 않는다"는 걸 이미 반영한 값이라(예: ADSET_PAUSED, CAMPAIGN_PAUSED), 소재의
+// status만 보면 "꺼진 캠페인/광고그룹 밑의 소재가 계속 게재중으로 잘못 보이는" 문제가 있었다.
+function getDeliveryStatus(ad){
+  const es = ad.effective_status || ad.status;
+  if(es === 'ACTIVE') return {isOn:true, cls:'on', label:'게재중'};
+  const labels = {
+    PAUSED: '중지(소재)',
+    ADSET_PAUSED: '중지(광고그룹)',
+    CAMPAIGN_PAUSED: '중지(캠페인)',
+    ARCHIVED: '보관됨',
+    DELETED: '삭제됨',
+    PENDING_REVIEW: '검토중',
+    DISAPPROVED: '반려됨',
+    PENDING_BILLING_INFO: '결제정보 필요',
+    WITH_ISSUES: '문제 있음',
+    IN_PROCESS: '처리중',
+    PREAPPROVED: '사전승인',
+  };
+  return {isOn:false, cls:'off', label: labels[es] || ('중지 (' + (es||'상태 미상') + ')')};
+}
+
 // 신호등 기준(전부 "누적" 기준 판단, Meta 자체 구매/ROAS는 참고용일 뿐 판단에 쓰지 않는다):
 //  - 누적 소진 19만원 미만                                        → 소액 소진 (판단 보류)
 //  - 누적 소진 19만원 이상 + ROAS 100% 미만                        → 경고
@@ -544,7 +567,7 @@ function renderCampaigns(){
   if(warningEl){
     let warningCount = 0;
     ads.forEach(a=>{
-      if(a.status !== 'ACTIVE') return;
+      if(!getDeliveryStatus(a).isOn) return;
       const c24all = cafe24AllTime[cafe24Key_(a.campaign_name, a.name)];
       if(getSignal(a, c24all).cls === 'critical') warningCount++;
     });
@@ -562,8 +585,8 @@ function renderCampaigns(){
     const rt = metaRealtimeMap[a.id];
     const hasImpressions = a.impressions > 0 || (rt && rt.impressions > 0);
     if(!hasImpressions) return false;
-    if(currentFilter==='on') return a.status==='ACTIVE';
-    if(currentFilter==='off') return a.status==='PAUSED';
+    if(currentFilter==='on') return getDeliveryStatus(a).isOn;
+    if(currentFilter==='off') return !getDeliveryStatus(a).isOn;
     return true;
   });
 
@@ -656,7 +679,7 @@ function renderCampaigns(){
       const mcR = metaRealtimeMap[ad.id]; // 이 소재의 Meta 실시간(오늘, 참고) 지표 — 없으면 '-'
       const mcC = metaCumulativeMap[ad.id]; // 이 소재의 Meta 누적(참고) 지표 — 없으면 '-'
       const sig = getSignal(ad, c24all); // 신호등은 조회기간과 무관한 "소재 생성 이후 전체 누적" 기준으로 판단
-      const isOn = ad.status === 'ACTIVE';
+      const deliveryStatus = getDeliveryStatus(ad); // 소재 자체뿐 아니라 광고그룹/캠페인이 꺼져 있는 것도 반영
       const fmtCafe = (c)=> c ? `${c.cafe24Purchases}건/${formatKRW(c.cafe24Revenue)}` : '-';
       const fmtRoas = (c)=> (c && c.cafe24Roas!=null) ? c.cafe24Roas.toFixed(1)+'%' : '-';
       const cafe24Cell = `
@@ -673,7 +696,7 @@ function renderCampaigns(){
       return `
         <tr>
           <td class="ad-name">${ad.name}<div style="font-size:11px;color:#999;font-weight:400;">${ad.adset_name||''}</div></td>
-          <td><span class="status-pill ${isOn?'on':'off'}">● ${isOn?'게재중':'중지'}</span></td>
+          <td><span class="status-pill ${deliveryStatus.cls}">● ${deliveryStatus.label}</span></td>
           <td class="num metric-cell">
             <div class="metric-dual"><span class="lbl">실시간</span>${mcR?formatKRW(mcR.spend):'-'}</div>
             <div class="metric-dual"><span class="lbl">전일자</span>${formatKRW(ad.spend)}</div>
@@ -752,8 +775,8 @@ function updateStats(){
   // 아래 소재별 표와 기준을 맞춰서, 전일자 노출이 아예 없는 소재는 상단 카드 집계에서도 제외한다.
   const active_ads = ads.filter(a=>a.impressions > 0);
   const total = active_ads.length;
-  const active = active_ads.filter(a=>a.status==='ACTIVE').length;
-  const inactive = active_ads.filter(a=>a.status==='PAUSED').length;
+  const active = active_ads.filter(a=>getDeliveryStatus(a).isOn).length;
+  const inactive = total - active;
   const totalSpend = active_ads.reduce((s,a)=>s+a.spend,0);
   document.getElementById('totalAds').textContent = total;
   document.getElementById('activeAds').textContent = active;
@@ -774,14 +797,6 @@ function updateClock(){
   const m = String(now.getMinutes()).padStart(2,'0');
   const s = String(now.getSeconds()).padStart(2,'0');
   document.getElementById('currentTime').textContent = `${h}:${m}:${s}`;
-}
-
-function updateCountdown(){
-  const now = Date.now();
-  const next = Math.ceil(now/(5*60*1000))*(5*60*1000);
-  const remain = Math.max(0, Math.ceil((next-now)/1000));
-  const min = Math.floor(remain/60);
-  document.getElementById('refreshCountdown').textContent = `${min}분 ${remain%60}초`;
 }
 
 function init(){
@@ -810,19 +825,8 @@ function init(){
     fetchCafe24Data();
   }
   setInterval(updateClock, 1000);
-  setInterval(updateCountdown, 1000);
-  setInterval(async ()=>{
-    if(USE_META_API){
-      // 자동 갱신 때마다 "어제" 날짜를 다시 계산해서, 자정을 넘겨도 항상 진짜 전일자를 가리키게 한다.
-      const yesterday = getKstYesterdayString();
-      metaRange = { since: yesterday, until: yesterday };
-      await fetchMetaData();
-      await fetchMetaRealtimeData();
-      await fetchMetaCumulativeData();
-      await fetchCafe24Data();
-    }
-  }, 5*60*1000);
-  updateCountdown();
+  // 백그라운드 자동 갱신(5분 주기)은 제거됨 — 새로고침(F5)할 때마다 위 fetch들이
+  // 다시 실행되어 그 순간의 최신 데이터를 가져온다.
 }
 
 window.addEventListener('DOMContentLoaded', init);
