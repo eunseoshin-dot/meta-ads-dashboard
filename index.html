@@ -37,6 +37,8 @@
   .cafe24-dual, .metric-dual{ font-size:11.5px; line-height:1.6; }
   .cafe24-dual .lbl, .metric-dual .lbl{ color:#999; margin-right:3px; }
   .cafe24-dual .val{ color:#7a4fae; font-weight:700; }
+  /* 실시간/전일자/누적 3줄 중 항상 마지막인 "누적" 줄을 굵게 강조 */
+  .cafe24-dual:last-child, .metric-dual:last-child{ font-weight:700; color:#262019; }
 
   .trend-block{ background:#fff; padding:22px 26px; border-radius:14px; margin-bottom:24px; box-shadow:0 4px 20px rgba(0,0,0,.1); }
   .trend-block h2{ font-size:15px; color:#4c3d8f; margin-bottom:4px; }
@@ -59,6 +61,7 @@
   .meta-ref{ margin-left:auto; font-size:11.5px; color:#aaa; }
   .cafe24-note{ background:#fff8e6; border:1px solid #f0d999; color:#8a6d1f; font-size:12px; padding:10px 24px; }
   .cafe24-banner{ background:#fff3e0; border:1px solid #f3c98b; color:#8a5a1f; font-size:12.5px; padding:10px 16px; border-radius:8px; margin-bottom:16px; }
+  .warning-alert{ background:#fbe3e1; border:1px solid #f0a8a1; color:#a5291a; font-size:13.5px; font-weight:700; padding:10px 16px; border-radius:8px; margin-bottom:16px; }
 
   .ad-table{ width:100%; overflow-x:auto; }
   table{ width:100%; border-collapse:collapse; min-width:1180px; }
@@ -97,6 +100,7 @@
       <div class="info-item"><span class="info-label">카페24 데이터 기준일</span><span class="info-value" id="cafe24AsOf">불러오는 중…</span></div>
     </div>
     <div class="cafe24-banner" id="cafe24Banner" hidden>⏱️ 카페24 구매 데이터는 실시간 반영이 되지 않습니다. 아래 판단 기준(카페24 ROAS·구매)은 <b id="cafe24AsOfInline">-</b> 기준으로 집계된 값입니다. Meta 자체 구매/ROAS는 참고용으로만 표시됩니다.<span id="cafe24CsvUploaded"></span></div>
+    <div class="warning-alert" id="warningAlert" hidden></div>
 
     <div class="date-range">
       <div class="date-range-row">
@@ -517,6 +521,41 @@ function updateCafe24Banner(){
 function renderCampaigns(){
   updateCafe24Banner();
   const list = document.getElementById('campaignsList');
+
+  // 실시간(오늘, 아직 안 끝난 하루치) 카페24 값
+  const today = getKstTodayString();
+  const cafe24Realtime = buildRangeCafe24Map(today, today);
+  // 전일자(어제) 카페24 값 — 소재별+일자별 raw 데이터에서 어제 하루치만 뽑음
+  const yesterday = getKstYesterdayString();
+  const cafe24Yesterday = buildRangeCafe24Map(yesterday, yesterday);
+  // 누적 카페24 값 — 위에서 설정한 조회기간만큼 raw 데이터를 합산. raw 동기화 전이면
+  // 예전 방식(이번 달 누적 스냅샷)으로 대체한다.
+  const cafe24NoRawData = cafe24CreativeDaily.length === 0;
+  const cafe24Cumulative = cafe24NoRawData ? cafe24Map : buildRangeCafe24Map(cafe24RangeSince, cafe24RangeUntil);
+  // 신호등 판단 전용 "소재 생성 이후 전체 누적" — 화면에 표시되는 "누적"(위 cafe24Cumulative)은
+  // 사용자가 설정한 조회기간에 따라 자유롭게 좁아지거나 넓어지는데, 신호등의 19만원/ROAS/5건 기준은
+  // 조회기간과 무관하게 그 소재가 raw 데이터에 처음 등장한 날부터 지금까지의 전체 누적으로 판단한다
+  // (조회기간을 짧게 잡을 때마다 잘 나가던 소재가 "소액 소진"으로 잘못 표시되는 걸 막기 위함).
+  const cafe24AllTime = cafe24NoRawData ? cafe24Map : buildRangeCafe24Map('0001-01-01', '9999-12-31');
+
+  // 상단 경고 배너 — 지금 필터/탭 설정과 무관하게, "게재중"이면서 신호등이 "경고"인 소재가
+  // 하나라도 있으면 항상 눈에 띄게 알려준다(전체 ads 기준으로 계산, filtered 이후가 아니라).
+  const warningEl = document.getElementById('warningAlert');
+  if(warningEl){
+    let warningCount = 0;
+    ads.forEach(a=>{
+      if(a.status !== 'ACTIVE') return;
+      const c24all = cafe24AllTime[cafe24Key_(a.campaign_name, a.name)];
+      if(getSignal(a, c24all).cls === 'critical') warningCount++;
+    });
+    if(warningCount > 0){
+      warningEl.hidden = false;
+      warningEl.textContent = `🚨 [경고] 소재가 ${warningCount}개 [게재중]입니다.`;
+    } else {
+      warningEl.hidden = true;
+    }
+  }
+
   const filtered = ads.filter(a=>{
     // 조회 기간에 노출이 아예 없는 소재는 표시하지 않는다. 단, 오늘(실시간) 막 시작한 신규 소재는
     // 전일자 노출이 0이어도 오늘 노출이 있으면 숨기지 않는다.
@@ -535,22 +574,6 @@ function renderCampaigns(){
   }
 
   const groups = groupByCampaign(filtered);
-
-  // 실시간(오늘, 아직 안 끝난 하루치) 카페24 값
-  const today = getKstTodayString();
-  const cafe24Realtime = buildRangeCafe24Map(today, today);
-  // 전일자(어제) 카페24 값 — 소재별+일자별 raw 데이터에서 어제 하루치만 뽑음
-  const yesterday = getKstYesterdayString();
-  const cafe24Yesterday = buildRangeCafe24Map(yesterday, yesterday);
-  // 누적 카페24 값 — 위에서 설정한 조회기간만큼 raw 데이터를 합산. raw 동기화 전이면
-  // 예전 방식(이번 달 누적 스냅샷)으로 대체한다.
-  const cafe24NoRawData = cafe24CreativeDaily.length === 0;
-  const cafe24Cumulative = cafe24NoRawData ? cafe24Map : buildRangeCafe24Map(cafe24RangeSince, cafe24RangeUntil);
-  // 신호등 판단 전용 "소재 생성 이후 전체 누적" — 화면에 표시되는 "누적"(위 cafe24Cumulative)은
-  // 사용자가 설정한 조회기간에 따라 자유롭게 좁아지거나 넓어지는데, 신호등의 19만원/ROAS/5건 기준은
-  // 조회기간과 무관하게 그 소재가 raw 데이터에 처음 등장한 날부터 지금까지의 전체 누적으로 판단한다
-  // (조회기간을 짧게 잡을 때마다 잘 나가던 소재가 "소액 소진"으로 잘못 표시되는 걸 막기 위함).
-  const cafe24AllTime = cafe24NoRawData ? cafe24Map : buildRangeCafe24Map('0001-01-01', '9999-12-31');
 
   // 캠페인 이름이 일치하는 카페24 데이터 전체를 합산한다("지금 Meta에 남아있는 소재"만 더하면
   // 이미 삭제/종료된 오래된 소재의 전환이 빠져서 시트의 캠페인 총계보다 작게 나오는 문제가 있었음).
@@ -617,7 +640,15 @@ function renderCampaigns(){
     const cAgg = aggregateForCampaign(cafe24Cumulative, g.name, g.ads);
     const roasClass = cAgg.roas==null ? 'unknown' : (cAgg.roas>=100 ? 'good' : 'critical');
 
-    const rows = g.ads.map(ad=>{
+    // 지출이 많이 나간 소재가 위로 오도록 누적 지출(Meta 누적 참고 지표) 기준 내림차순 정렬.
+    // 누적 데이터가 아직 없는 소재는 전일자 지출로 대신 정렬한다.
+    const sortedAds = [...g.ads].sort((a,b)=>{
+      const spendA = metaCumulativeMap[a.id] ? metaCumulativeMap[a.id].spend : a.spend;
+      const spendB = metaCumulativeMap[b.id] ? metaCumulativeMap[b.id].spend : b.spend;
+      return spendB - spendA;
+    });
+
+    const rows = sortedAds.map(ad=>{
       const c24r = cafe24Realtime[cafe24Key_(ad.campaign_name, ad.name)];
       const c24y = cafe24Yesterday[cafe24Key_(ad.campaign_name, ad.name)];
       const c24c = cafe24Cumulative[cafe24Key_(ad.campaign_name, ad.name)];
@@ -670,7 +701,6 @@ function renderCampaigns(){
           </td>
           ${cafe24Cell}
           <td><span class="signal ${sig.cls}">● ${sig.label}</span></td>
-          <td class="num meta-ref-cell">${ad.purchases}건 · ${ad.metaRoas!=null ? ad.metaRoas.toFixed(2) : '-'} (Meta 참고)</td>
         </tr>`;
     }).join('');
 
@@ -707,7 +737,7 @@ function renderCampaigns(){
         <div class="ad-table">
           <table>
             <thead><tr>
-              <th>소재명</th><th>게재상태</th><th>지출</th><th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th><th>구매/구매값(카페24)</th><th>ROAS(카페24)</th><th>신호등(소재 생성 이후 전체 누적 기준)</th><th>Meta 참고</th>
+              <th>소재명</th><th>게재상태</th><th>지출</th><th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th><th>구매/구매값(카페24)</th><th>ROAS(카페24)</th><th>신호등(소재 생성 이후 전체 누적 기준)</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
