@@ -318,14 +318,27 @@ function renderCampaigns(){
     const ctr = impressions>0 ? (clicks/impressions*100) : 0;
     const purchases = g.ads.reduce((s,a)=>s+(a.purchases||0),0);
 
-    // 카페24 누적치 (매칭된 소재만 합산) — 이게 이 대시보드의 실제 판단 기준
-    let cafe24SpendSum = 0, cafe24RevenueSum = 0, cafe24PurchasesSum = 0, cafe24Matched = 0;
-    g.ads.forEach(ad=>{
-      const c = cafe24Map[ad.name];
-      if(c){ cafe24Matched++; cafe24SpendSum += (c.spend||0); cafe24RevenueSum += (c.cafe24Revenue||0); cafe24PurchasesSum += (c.cafe24Purchases||0); }
+    // 카페24 누적치: "지금 Meta에 남아있는 소재"만 더하면, 이미 삭제/종료된 오래된 소재의
+    // 전환이 통째로 빠져서 시트의 캠페인 총계보다 훨씬 작게 나온다(실측 확인됨 — 예: 실제 15건인데
+    // 1건으로 표시). 그래서 상단 요약은 "이 캠페인 이름과 일치하는 카페24 데이터 전체"를 기준으로
+    // 합산한다 — 아래 개별 행은 지금 Meta에 있는 소재만 보이지만, 이 요약 숫자는 시트의 캠페인
+    // 총계 행과 일치해야 정상이다.
+    let cafe24SpendSum = 0, cafe24RevenueSum = 0, cafe24PurchasesSum = 0, cafe24CreativeCount = 0;
+    Object.keys(cafe24Map).forEach(name=>{
+      const c = cafe24Map[name];
+      if((c.campaign||'').trim() === (g.name||'').trim()){
+        cafe24CreativeCount++;
+        cafe24SpendSum += (c.spend||0);
+        cafe24RevenueSum += (c.cafe24Revenue||0);
+        cafe24PurchasesSum += (c.cafe24Purchases||0);
+      }
     });
     const cafe24RoasAgg = cafe24SpendSum>0 ? (cafe24RevenueSum/cafe24SpendSum*100) : null;
     const roasClass = cafe24RoasAgg==null ? 'unknown' : (cafe24RoasAgg>=100 ? 'good' : 'critical');
+
+    // 지금 Meta에 살아있는 소재(표에 보이는 행) 중 카페24 매칭이 된 개수 — 표시용 참고 수치
+    let cafe24Matched = 0;
+    g.ads.forEach(ad=>{ if(cafe24Map[ad.name]) cafe24Matched++; });
 
     const rows = g.ads.map(ad=>{
       const c24 = cafe24Map[ad.name];
@@ -352,10 +365,12 @@ function renderCampaigns(){
     const cafe24Summary = `
       <div class="cafe24-summary">
         <div>
-          <div class="cafe24-summary-label">카페24 누적 ROAS (${cafe24AsOfDate||'기준일 미상'} 기준 · 매칭 ${cafe24Matched}/${g.ads.length}개 소재)</div>
+          <div class="cafe24-summary-label">카페24 누적 ROAS (${cafe24AsOfDate||'기준일 미상'} 기준 · 캠페인 전체 소재 ${cafe24CreativeCount}개 반영)</div>
           <div class="cafe24-summary-roas ${roasClass}">${cafe24RoasAgg!=null ? cafe24RoasAgg.toFixed(1)+'%' : '데이터 없음'}</div>
         </div>
-        <div class="cafe24-summary-sub">구매 <b>${cafe24PurchasesSum}건</b> · 구매값 <b>${formatKRW(cafe24RevenueSum)}</b></div>
+        <div class="cafe24-summary-sub">구매 <b>${cafe24PurchasesSum}건</b> · 구매값 <b>${formatKRW(cafe24RevenueSum)}</b>
+          <span style="color:#999;font-size:12px;"> · 현재 Meta 게재 중인 소재 매칭 ${cafe24Matched}/${g.ads.length}개(아래 표 기준)</span>
+        </div>
         <div class="meta-ref">Meta 참고: 구매 ${purchases}건 (판단 기준 아님)</div>
       </div>`;
 
