@@ -98,7 +98,7 @@
 
     <div class="date-range">
       <div class="date-range-row">
-        <span>Meta 지표(지출/노출/클릭/CTR/CPC)는 <b>전일자(어제)</b>가 기본이고, 아래 카페24 누적 조회기간과 같은 기간의 <b>누적</b> 값도 같이 보여줘요 — 전일자 조회는 항상 가볍게, 누적 조회만 아래에서 설정한 기간만큼 추가로 불러와요.</span>
+        <span>Meta·카페24 지표 모두 <b>실시간(오늘)</b>·<b>전일자(어제)</b>·<b>누적(아래에서 설정한 기간)</b> 세 값을 같이 보여줘요 — 실시간/전일자 조회는 항상 가볍게 하루치만, 누적 조회만 설정한 기간만큼 추가로 불러와요.</span>
       </div>
       <div class="date-range-row">
         <span>카페24 누적 조회기간</span>
@@ -236,6 +236,28 @@ async function fetchMetaData(){
 // 전일자 fetchMetaData()와는 별도로, 카페24 누적 조회기간이 바뀔 때만 다시 불러온다(보통 한 달
 // 남짓이라 예전의 "since=2024" 전체 누적 조회보다 훨씬 가볍다).
 let metaCumulativeMap = {};
+// 소재 id -> "실시간"(오늘, 아직 안 끝난 하루치) Meta 지표. 전일자와 똑같은 방식으로 별도 조회한다.
+let metaRealtimeMap = {};
+
+async function fetchMetaRealtimeData(){
+  if(!USE_META_API) return;
+  try{
+    const today = getKstTodayString();
+    const params = new URLSearchParams();
+    params.set('since', today);
+    params.set('until', today);
+    const url = VERCEL_API_URL + '?' + params.toString();
+    const response = await fetch(url);
+    const data = await response.json().catch(()=>({}));
+    if(!response.ok || data.error){ throw new Error((data.error && data.error.message) || data.error || ('API Error: ' + response.status)); }
+    metaRealtimeMap = {};
+    (data.ads||[]).forEach(a=>{ metaRealtimeMap[a.id] = a; });
+    console.log('✅ Meta 실시간(오늘) 지표 로드:', (data.ads||[]).length, '개 소재');
+    renderCampaigns();
+  }catch(err){
+    console.error('❌ Meta 실시간(오늘) 지표 로드 오류:', err);
+  }
+}
 
 async function fetchMetaCumulativeData(){
   if(!USE_META_API || !cafe24RangeSince || !cafe24RangeUntil) return;
@@ -394,9 +416,9 @@ function updateCafe24Banner(){
   const noRaw = cafe24CreativeDaily.length === 0;
   const rangeText = (cafe24RangeSince && cafe24RangeUntil) ? `${cafe24RangeSince} ~ ${cafe24RangeUntil}` : '기간 미설정';
   if(noRaw){
-    bannerEl.innerHTML = `⚠️ 소재별 일자별 카페24 원본 데이터가 아직 없어서 "전일자"는 못 보여드리고, 아래 카페24 누적은 <b>${cafe24AsOfDate||'-'}</b> 기준 이번 달 누적 스냅샷으로 대신 표시하고 있어요. Apps Script(syncCafe24ToGithub)를 최신 버전으로 실행하면 전일자도 뜨게 돼요.`;
+    bannerEl.innerHTML = `⚠️ 소재별 일자별 카페24 원본 데이터가 아직 없어서 "실시간/전일자"는 못 보여드리고, 아래 카페24 누적은 <b>${cafe24AsOfDate||'-'}</b> 기준 이번 달 누적 스냅샷으로 대신 표시하고 있어요. Apps Script(syncCafe24ToGithub)를 최신 버전으로 실행하면 실시간/전일자도 뜨게 돼요.`;
   } else {
-    bannerEl.innerHTML = `⏱️ 아래 표에는 카페24 ROAS가 <b>전일자(어제)</b>와 <b>누적(${rangeText})</b> 두 가지로 같이 나와요. Meta 자체 구매/ROAS는 참고용으로만 표시됩니다.`;
+    bannerEl.innerHTML = `⏱️ 아래 표에는 카페24 ROAS가 <b>실시간(오늘, 진행 중)</b>·<b>전일자(어제)</b>·<b>누적(${rangeText})</b> 세 가지로 같이 나와요. 실시간은 오늘 하루가 아직 끝나지 않아 계속 바뀔 수 있어요. Meta 자체 구매/ROAS는 참고용으로만 표시됩니다.`;
   }
 }
 
@@ -404,20 +426,27 @@ function renderCampaigns(){
   updateCafe24Banner();
   const list = document.getElementById('campaignsList');
   const filtered = ads.filter(a=>{
-    if(a.impressions === 0) return false; // 조회 기간(전일자)에 노출이 아예 없는 소재는 표시하지 않는다
+    // 조회 기간에 노출이 아예 없는 소재는 표시하지 않는다. 단, 오늘(실시간) 막 시작한 신규 소재는
+    // 전일자 노출이 0이어도 오늘 노출이 있으면 숨기지 않는다.
+    const rt = metaRealtimeMap[a.id];
+    const hasImpressions = a.impressions > 0 || (rt && rt.impressions > 0);
+    if(!hasImpressions) return false;
     if(currentFilter==='on') return a.status==='ACTIVE';
     if(currentFilter==='off') return a.status==='PAUSED';
     return true;
   });
 
   if(filtered.length===0){
-    list.innerHTML = '<div class="campaign-block"><div class="empty-state">📭 표시할 소재가 없습니다 (전일자 노출이 있는 소재가 없어요)</div></div>';
+    list.innerHTML = '<div class="campaign-block"><div class="empty-state">📭 표시할 소재가 없습니다 (실시간·전일자 노출이 있는 소재가 없어요)</div></div>';
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('ko-KR');
     return;
   }
 
   const groups = groupByCampaign(filtered);
 
+  // 실시간(오늘, 아직 안 끝난 하루치) 카페24 값
+  const today = getKstTodayString();
+  const cafe24Realtime = buildRangeCafe24Map(today, today);
   // 전일자(어제) 카페24 값 — 소재별+일자별 raw 데이터에서 어제 하루치만 뽑음
   const yesterday = getKstYesterdayString();
   const cafe24Yesterday = buildRangeCafe24Map(yesterday, yesterday);
@@ -475,32 +504,40 @@ function renderCampaigns(){
     const ctr = impressions>0 ? (clicks/impressions*100) : 0;
     const purchases = g.ads.reduce((s,a)=>s+(a.purchases||0),0);
 
-    // Meta 지표(지출/노출/클릭/CTR)의 "누적" 합계 — metaCumulativeMap(카페24 누적 조회기간과 같은
-    // 기간의 Meta 데이터)에서 이 캠페인 소재들의 값만 소재 id로 찾아 더한다.
-    const spendC = g.ads.reduce((s,a)=>{ const mc=metaCumulativeMap[a.id]; return s+(mc?mc.spend:0); },0);
-    const impressionsC = g.ads.reduce((s,a)=>{ const mc=metaCumulativeMap[a.id]; return s+(mc?mc.impressions:0); },0);
-    const clicksC = g.ads.reduce((s,a)=>{ const mc=metaCumulativeMap[a.id]; return s+(mc?mc.clicks:0); },0);
-    const ctrC = impressionsC>0 ? (clicksC/impressionsC*100) : 0;
+    // Meta 지표(지출/노출/클릭/CTR)의 "실시간"/"누적" 합계 — 각각 metaRealtimeMap/metaCumulativeMap에서
+    // 이 캠페인 소재들의 값만 소재 id로 찾아 더한다. (전일자는 위 g.ads의 값 그대로 사용)
+    function sumMeta(map){
+      const s = g.ads.reduce((acc,a)=>{ const mc=map[a.id]; return { spend: acc.spend+(mc?mc.spend:0), impressions: acc.impressions+(mc?mc.impressions:0), clicks: acc.clicks+(mc?mc.clicks:0) }; }, {spend:0, impressions:0, clicks:0});
+      return { spend: s.spend, impressions: s.impressions, clicks: s.clicks, ctr: s.impressions>0 ? (s.clicks/s.impressions*100) : 0 };
+    }
+    const metaR = sumMeta(metaRealtimeMap);
+    const metaC = sumMeta(metaCumulativeMap);
+    const hasMetaRealtime = Object.keys(metaRealtimeMap).length > 0;
     const hasMetaCumulative = Object.keys(metaCumulativeMap).length > 0;
 
+    const rAgg = aggregateForCampaign(cafe24Realtime, g.name, g.ads);
     const yAgg = aggregateForCampaign(cafe24Yesterday, g.name, g.ads);
     const cAgg = aggregateForCampaign(cafe24Cumulative, g.name, g.ads);
     const roasClass = cAgg.roas==null ? 'unknown' : (cAgg.roas>=100 ? 'good' : 'critical');
 
     const rows = g.ads.map(ad=>{
+      const c24r = cafe24Realtime[cafe24Key_(ad.campaign_name, ad.name)];
       const c24y = cafe24Yesterday[cafe24Key_(ad.campaign_name, ad.name)];
       const c24c = cafe24Cumulative[cafe24Key_(ad.campaign_name, ad.name)];
-      const mc = metaCumulativeMap[ad.id]; // 이 소재의 Meta 누적(참고) 지표 — 없으면 '-'
+      const mcR = metaRealtimeMap[ad.id]; // 이 소재의 Meta 실시간(오늘, 참고) 지표 — 없으면 '-'
+      const mcC = metaCumulativeMap[ad.id]; // 이 소재의 Meta 누적(참고) 지표 — 없으면 '-'
       const sig = getSignal(ad, c24c); // 신호등은 '누적' 기준으로 판단 (하루치는 표본이 작아 들쭉날쭉함)
       const isOn = ad.status === 'ACTIVE';
       const fmtCafe = (c)=> c ? `${c.cafe24Purchases}건/${formatKRW(c.cafe24Revenue)}` : '-';
       const fmtRoas = (c)=> (c && c.cafe24Roas!=null) ? c.cafe24Roas.toFixed(1)+'%' : '-';
       const cafe24Cell = `
         <td class="num cafe24-cell">
+          <div class="cafe24-dual"><span class="lbl">실시간</span>${fmtCafe(c24r)}</div>
           <div class="cafe24-dual"><span class="lbl">전일자</span>${fmtCafe(c24y)}</div>
           <div class="cafe24-dual"><span class="lbl">누적</span>${fmtCafe(c24c)}</div>
         </td>
         <td class="num cafe24-cell">
+          <div class="cafe24-dual"><span class="lbl">실시간</span>${fmtRoas(c24r)}</div>
           <div class="cafe24-dual"><span class="lbl">전일자</span>${fmtRoas(c24y)}</div>
           <div class="cafe24-dual"><span class="lbl">누적</span>${fmtRoas(c24c)}</div>
         </td>`;
@@ -509,24 +546,29 @@ function renderCampaigns(){
           <td class="ad-name">${ad.name}<div style="font-size:11px;color:#999;font-weight:400;">${ad.adset_name||''}</div></td>
           <td><span class="status-pill ${isOn?'on':'off'}">● ${isOn?'게재중':'중지'}</span></td>
           <td class="num metric-cell">
+            <div class="metric-dual"><span class="lbl">실시간</span>${mcR?formatKRW(mcR.spend):'-'}</div>
             <div class="metric-dual"><span class="lbl">전일자</span>${formatKRW(ad.spend)}</div>
-            <div class="metric-dual"><span class="lbl">누적</span>${mc?formatKRW(mc.spend):'-'}</div>
+            <div class="metric-dual"><span class="lbl">누적</span>${mcC?formatKRW(mcC.spend):'-'}</div>
           </td>
           <td class="num metric-cell">
+            <div class="metric-dual"><span class="lbl">실시간</span>${mcR?mcR.impressions.toLocaleString():'-'}</div>
             <div class="metric-dual"><span class="lbl">전일자</span>${ad.impressions.toLocaleString()}</div>
-            <div class="metric-dual"><span class="lbl">누적</span>${mc?mc.impressions.toLocaleString():'-'}</div>
+            <div class="metric-dual"><span class="lbl">누적</span>${mcC?mcC.impressions.toLocaleString():'-'}</div>
           </td>
           <td class="num metric-cell">
+            <div class="metric-dual"><span class="lbl">실시간</span>${mcR?mcR.clicks.toLocaleString():'-'}</div>
             <div class="metric-dual"><span class="lbl">전일자</span>${ad.clicks.toLocaleString()}</div>
-            <div class="metric-dual"><span class="lbl">누적</span>${mc?mc.clicks.toLocaleString():'-'}</div>
+            <div class="metric-dual"><span class="lbl">누적</span>${mcC?mcC.clicks.toLocaleString():'-'}</div>
           </td>
           <td class="num metric-cell">
+            <div class="metric-dual"><span class="lbl">실시간</span>${mcR?mcR.ctr.toFixed(2)+'%':'-'}</div>
             <div class="metric-dual"><span class="lbl">전일자</span>${ad.ctr.toFixed(2)}%</div>
-            <div class="metric-dual"><span class="lbl">누적</span>${mc?mc.ctr.toFixed(2)+'%':'-'}</div>
+            <div class="metric-dual"><span class="lbl">누적</span>${mcC?mcC.ctr.toFixed(2)+'%':'-'}</div>
           </td>
           <td class="num metric-cell">
+            <div class="metric-dual"><span class="lbl">실시간</span>${mcR?formatKRW(mcR.cpc):'-'}</div>
             <div class="metric-dual"><span class="lbl">전일자</span>${formatKRW(ad.cpc)}</div>
-            <div class="metric-dual"><span class="lbl">누적</span>${mc?formatKRW(mc.cpc):'-'}</div>
+            <div class="metric-dual"><span class="lbl">누적</span>${mcC?formatKRW(mcC.cpc):'-'}</div>
           </td>
           ${cafe24Cell}
           <td><span class="signal ${sig.cls}">● ${sig.label}</span></td>
@@ -541,13 +583,13 @@ function renderCampaigns(){
     const cafe24Summary = `
       <div class="cafe24-summary">
         <div>
-          <div class="cafe24-summary-label">카페24 ROAS · 전일자(${yesterday}) / ${cumulativeLabel} · 캠페인 전체 소재 ${cAgg.creativeCount}개 반영</div>
+          <div class="cafe24-summary-label">카페24 ROAS · 실시간(${today}) / 전일자(${yesterday}) / ${cumulativeLabel} · 캠페인 전체 소재 ${cAgg.creativeCount}개 반영</div>
           <div class="cafe24-summary-roas ${roasClass}">
-            <span style="font-size:14px;color:#999;font-weight:600;">전일자 ${yAgg.roas!=null?yAgg.roas.toFixed(1)+'%':'-'} · </span>누적 ${cAgg.roas!=null ? cAgg.roas.toFixed(1)+'%' : '데이터 없음'}
+            <span style="font-size:14px;color:#999;font-weight:600;">실시간 ${rAgg.roas!=null?rAgg.roas.toFixed(1)+'%':'-'} · 전일자 ${yAgg.roas!=null?yAgg.roas.toFixed(1)+'%':'-'} · </span>누적 ${cAgg.roas!=null ? cAgg.roas.toFixed(1)+'%' : '데이터 없음'}
           </div>
         </div>
         <div class="cafe24-summary-sub">
-          전일자 구매 <b>${yAgg.purchases}건</b>·<b>${formatKRW(yAgg.revenue)}</b> &nbsp;|&nbsp; 누적 구매 <b>${cAgg.purchases}건</b>·<b>${formatKRW(cAgg.revenue)}</b>
+          실시간 구매 <b>${rAgg.purchases}건</b>·<b>${formatKRW(rAgg.revenue)}</b> &nbsp;|&nbsp; 전일자 구매 <b>${yAgg.purchases}건</b>·<b>${formatKRW(yAgg.revenue)}</b> &nbsp;|&nbsp; 누적 구매 <b>${cAgg.purchases}건</b>·<b>${formatKRW(cAgg.revenue)}</b>
         </div>
         <div class="meta-ref">Meta 참고: 구매 ${purchases}건 (판단 기준 아님)</div>
       </div>`;
@@ -557,10 +599,10 @@ function renderCampaigns(){
         <div class="campaign-head">
           <div class="campaign-name">${g.name}</div>
           <div class="campaign-meta">
-            <span>지출 전일자 <b>${formatKRW(spend)}</b>${hasMetaCumulative ? ` · 누적 <b>${formatKRW(spendC)}</b>` : ''}</span>
-            <span>노출 전일자 <b>${impressions.toLocaleString()}</b>${hasMetaCumulative ? ` · 누적 <b>${impressionsC.toLocaleString()}</b>` : ''}</span>
-            <span>클릭 전일자 <b>${clicks.toLocaleString()}</b>${hasMetaCumulative ? ` · 누적 <b>${clicksC.toLocaleString()}</b>` : ''}</span>
-            <span>CTR 전일자 <b>${ctr.toFixed(2)}%</b>${hasMetaCumulative ? ` · 누적 <b>${ctrC.toFixed(2)}%</b>` : ''}</span>
+            <span>지출 ${hasMetaRealtime ? `실시간 <b>${formatKRW(metaR.spend)}</b> · ` : ''}전일자 <b>${formatKRW(spend)}</b>${hasMetaCumulative ? ` · 누적 <b>${formatKRW(metaC.spend)}</b>` : ''}</span>
+            <span>노출 ${hasMetaRealtime ? `실시간 <b>${metaR.impressions.toLocaleString()}</b> · ` : ''}전일자 <b>${impressions.toLocaleString()}</b>${hasMetaCumulative ? ` · 누적 <b>${metaC.impressions.toLocaleString()}</b>` : ''}</span>
+            <span>클릭 ${hasMetaRealtime ? `실시간 <b>${metaR.clicks.toLocaleString()}</b> · ` : ''}전일자 <b>${clicks.toLocaleString()}</b>${hasMetaCumulative ? ` · 누적 <b>${metaC.clicks.toLocaleString()}</b>` : ''}</span>
+            <span>CTR ${hasMetaRealtime ? `실시간 <b>${metaR.ctr.toFixed(2)}%</b> · ` : ''}전일자 <b>${ctr.toFixed(2)}%</b>${hasMetaCumulative ? ` · 누적 <b>${metaC.ctr.toFixed(2)}%</b>` : ''}</span>
           </div>
         </div>
         ${cafe24Summary}
@@ -635,6 +677,7 @@ function init(){
     const yesterday = getKstYesterdayString();
     metaRange = { since: yesterday, until: yesterday };
     fetchMetaData();
+    fetchMetaRealtimeData(); // 지출/노출/클릭/CTR/CPC의 "실시간(오늘)" 값
     fetchMetaCumulativeData(); // 지출/노출/클릭/CTR/CPC의 "누적" 값 — 카페24 누적 조회기간과 같은 기간
     fetchCafe24Data();
   }
@@ -646,6 +689,7 @@ function init(){
       const yesterday = getKstYesterdayString();
       metaRange = { since: yesterday, until: yesterday };
       await fetchMetaData();
+      await fetchMetaRealtimeData();
       await fetchMetaCumulativeData();
       await fetchCafe24Data();
     }
