@@ -29,9 +29,14 @@
   .refresh-info{ text-align:center; color:#999; font-size:12px; margin-top:14px; padding-top:14px; border-top:1px solid #eee; }
   .refresh-time{ font-weight:700; color:#667eea; }
 
-  .date-range{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px; padding:12px 16px; background:#f8f7fc; border-radius:10px; font-size:13px; }
+  .date-range{ display:flex; flex-direction:column; gap:8px; margin-bottom:16px; padding:12px 16px; background:#f8f7fc; border-radius:10px; font-size:13px; }
   .date-range input[type=date]{ padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:13px; }
-  .date-range .range-label{ color:#666; font-size:12px; margin-left:4px; }
+  .date-range .range-label{ color:#666; font-size:12px; }
+  .date-range-row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .range-tabs{ display:flex; gap:6px; }
+  .range-tab{ padding:6px 14px; border:2px solid #7a4fae; background:#fff; color:#7a4fae; border-radius:20px; cursor:pointer; font-weight:700; font-size:12.5px; }
+  .range-tab.active{ background:#7a4fae; color:#fff; }
+  .range-note{ font-size:11.5px; color:#a08cc4; }
 
   .trend-block{ background:#fff; padding:22px 26px; border-radius:14px; margin-bottom:24px; box-shadow:0 4px 20px rgba(0,0,0,.1); }
   .trend-block h2{ font-size:15px; color:#4c3d8f; margin-bottom:4px; }
@@ -92,11 +97,20 @@
     <div class="cafe24-banner" id="cafe24Banner" hidden>⏱️ 카페24 구매 데이터는 실시간 반영이 되지 않습니다. 아래 판단 기준(카페24 ROAS·구매)은 <b id="cafe24AsOfInline">-</b> 기준으로 집계된 값입니다. Meta 자체 구매/ROAS는 참고용으로만 표시됩니다.<span id="cafe24CsvUploaded"></span></div>
 
     <div class="date-range">
-      <span>기간 설정 (Meta 참고 지표에만 적용)</span>
-      <input type="date" id="sinceInput"> ~ <input type="date" id="untilInput">
-      <button class="filter-btn" onclick="applyDateRange()">적용</button>
-      <button class="filter-btn" onclick="resetDateRange()">전체 누적(전일자 기준)</button>
+      <div class="date-range-row">
+        <span>기간 설정 (상단 카드 + 아래 소재별 표의 Meta 지표에 적용)</span>
+        <div class="range-tabs">
+          <button class="range-tab active" data-mode="today" onclick="setRangeMode('today')">오늘(실시간)</button>
+          <button class="range-tab" data-mode="cumulative" onclick="setRangeMode('cumulative')">전체 누적</button>
+          <button class="range-tab" data-mode="custom" onclick="setRangeMode('custom')">기간 직접 설정</button>
+        </div>
+      </div>
+      <div class="date-range-row" id="customRangeRow" hidden>
+        <input type="date" id="sinceInput"> ~ <input type="date" id="untilInput">
+        <button class="filter-btn" onclick="applyDateRange()">적용</button>
+      </div>
       <span class="range-label" id="rangeLabel"></span>
+      <span class="range-note">※ 카페24 구매/ROAS(소재별 표, 캠페인 요약)는 이 기간 설정과 무관하게 항상 이번 달 누적 값이에요 — 카페24 원본 데이터가 일자별이 아니라 월 누적 스냅샷이라 그래요.</span>
     </div>
 
     <div class="controls">
@@ -135,14 +149,45 @@ let ads = [
   { id:'1', name:'V_예시_소재', status:'ACTIVE', campaign_name:'V_예시_캠페인', adset_name:'전체', spend:0, impressions:0, clicks:0, ctr:0, cpc:0, purchases:0, metaRoas:null }
 ];
 
-// 소재명(광고 이름) -> 카페24 누적 데이터
+// 소재명(광고 이름) -> 카페24 "이번 달 누적" 데이터 (전체 누적 모드에서 사용)
 let cafe24Map = {};
 let cafe24AsOfDate = null; // 카페24 데이터가 실제로 반영된 마지막 날짜 (YYYY-MM-DD)
 let dailyTrend = []; // 계정 단위 일자별 추이 (최근 14일 그래프용)
 let dailyChart = null;
+// 소재별+일자별 카페24 원본 (오늘/기간 직접 설정 모드에서 선택된 기간만큼 직접 합산해서 씀)
+let cafe24CreativeDaily = [];
 
-// Meta 참고 지표 조회 기간. 비워두면 백엔드 기본값(전체 누적, 전일자 기준) 사용
+// cafe24CreativeDaily에서 since~until(둘 다 포함) 기간에 해당하는 것만 소재별로 합산한 맵을 만든다.
+// '오늘'/'기간 직접 설정' 모드에서 카페24 숫자도 그 기간 기준으로 보여주기 위해 씀.
+// ('전체 누적' 모드는 이번 달 누적 스냅샷인 cafe24Map을 그대로 쓴다)
+function buildRangeCafe24Map(since, until){
+  const map = {};
+  if(!since || !until) return map;
+  cafe24CreativeDaily.forEach(row=>{
+    if(row.date < since || row.date > until) return;
+    if(!map[row.creative]) map[row.creative] = { campaign: row.campaign, spend:0, cafe24Purchases:0, cafe24Revenue:0 };
+    const m = map[row.creative];
+    m.spend += row.spend||0;
+    m.cafe24Purchases += row.cafe24Purchases||0;
+    m.cafe24Revenue += row.cafe24Revenue||0;
+  });
+  Object.keys(map).forEach(name=>{
+    const m = map[name];
+    m.cafe24Roas = m.spend>0 ? (m.cafe24Revenue/m.spend*100) : null;
+  });
+  return map;
+}
+
+// Meta 참고 지표 조회 기간 및 현재 모드('today' | 'cumulative' | 'custom')
 let metaRange = { since: '', until: '' };
+let rangeMode = 'today';
+
+// KST 기준 오늘 날짜 문자열(YYYY-MM-DD)
+function getKstTodayString(){
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9*60*60*1000);
+  return kst.toISOString().slice(0,10);
+}
 
 async function fetchMetaData(){
   try{
@@ -159,8 +204,9 @@ async function fetchMetaData(){
       if(data.range){
         const rv = document.getElementById('rangeValue');
         const rl = document.getElementById('rangeLabel');
-        if(rv) rv.textContent = `${data.range.since} ~ ${data.range.until}`;
-        if(rl) rl.textContent = `현재 조회: ${data.range.since} ~ ${data.range.until}`;
+        const modeLabel = rangeMode==='today' ? '오늘(실시간)' : rangeMode==='cumulative' ? '전체 누적(실시간)' : '직접 설정한 기간';
+        if(rv) rv.textContent = `${modeLabel} · ${data.range.since} ~ ${data.range.until}`;
+        if(rl) rl.textContent = `현재 조회: ${modeLabel} (${data.range.since} ~ ${data.range.until})`;
       }
       renderCampaigns();
       updateStats();
@@ -169,6 +215,8 @@ async function fetchMetaData(){
     console.error('❌ Meta API 오류:', err);
   }
 }
+
+let cafe24FetchFailed = false; // true면 배너에 에러 메시지가 떠 있는 상태 — 모드 전환 시 이걸 덮어쓰지 않는다
 
 async function fetchCafe24Data(){
   const asOfEl = document.getElementById('cafe24AsOf');
@@ -181,7 +229,10 @@ async function fetchCafe24Data(){
     cafe24Map = data.creatives || {};
     cafe24AsOfDate = data.asOfDate || null;
     dailyTrend = data.daily || [];
-    console.log('✅ 카페24 데이터 로드:', Object.keys(cafe24Map).length, '개 소재, 기준일:', cafe24AsOfDate, '/ 일자별 추이:', dailyTrend.length, '일치');
+    cafe24CreativeDaily = data.creativeDaily || [];
+    cafe24FetchFailed = false;
+    console.log('✅ 카페24 데이터 로드:', Object.keys(cafe24Map).length, '개 소재, 기준일:', cafe24AsOfDate,
+      '/ 일자별 추이:', dailyTrend.length, '일치 / 소재별 raw:', cafe24CreativeDaily.length, '행');
     if(asOfEl) asOfEl.textContent = cafe24AsOfDate ? `${cafe24AsOfDate} 기준` : '기준일 확인 불가';
     if(asOfInlineEl) asOfInlineEl.textContent = cafe24AsOfDate ? `${cafe24AsOfDate}` : '알 수 없는 날짜';
     if(bannerEl){
@@ -194,6 +245,7 @@ async function fetchCafe24Data(){
     renderCampaigns();
   }catch(err){
     console.error('❌ 카페24 API 오류:', err);
+    cafe24FetchFailed = true;
     if(asOfEl) asOfEl.textContent = '연동 안 됨';
     if(bannerEl){
       bannerEl.hidden = false;
@@ -259,16 +311,30 @@ function renderDailyChart(){
   });
 }
 
+// 오늘(실시간) / 전체 누적 / 기간 직접 설정 탭 전환.
+// '오늘'과 '전체 누적'은 즉시 조회하고, '직접 설정'은 날짜를 고르고 '적용'을 눌러야 조회된다.
+function setRangeMode(mode){
+  rangeMode = mode;
+  document.querySelectorAll('.range-tab').forEach(b=>b.classList.remove('active'));
+  const btn = document.querySelector(`.range-tab[data-mode="${mode}"]`);
+  if(btn) btn.classList.add('active');
+  const customRow = document.getElementById('customRangeRow');
+  if(customRow) customRow.hidden = (mode !== 'custom');
+
+  const today = getKstTodayString();
+  if(mode === 'today'){
+    metaRange = { since: today, until: today };
+    fetchMetaData();
+  } else if(mode === 'cumulative'){
+    metaRange = { since: '2024-01-01', until: today };
+    fetchMetaData();
+  }
+  // custom: 아래에서 사용자가 '적용'을 누르면 applyDateRange()가 조회한다
+}
+
 function applyDateRange(){
   metaRange.since = document.getElementById('sinceInput').value;
   metaRange.until = document.getElementById('untilInput').value;
-  fetchMetaData();
-}
-
-function resetDateRange(){
-  metaRange = { since:'', until:'' };
-  document.getElementById('sinceInput').value = '';
-  document.getElementById('untilInput').value = '';
   fetchMetaData();
 }
 
@@ -286,16 +352,34 @@ function getSignal(ad, c24){
 let currentFilter = 'all';
 
 function groupByCampaign(list){
+  // 광고 계정이 여러 개라 캠페인 id는 계정마다 다르지만, 이름이 같으면 같은 캠페인으로 보고
+  // 하나의 카드로 합친다 (campaign_id 기준으로 묶으면 계정이 다르단 이유만으로 카드가 쪼개짐).
   const map = new Map();
   list.forEach(ad=>{
-    const key = ad.campaign_id || ad.campaign_name;
+    const key = ad.campaign_name || ad.campaign_id;
     if(!map.has(key)) map.set(key, { name: ad.campaign_name, ads: [] });
     map.get(key).ads.push(ad);
   });
   return Array.from(map.values());
 }
 
+// 상단 배너 문구를 현재 모드(오늘/전체 누적/기간 직접 설정)에 맞게 갱신한다.
+function updateCafe24Banner(){
+  const bannerEl = document.getElementById('cafe24Banner');
+  if(!bannerEl || bannerEl.hidden || cafe24FetchFailed) return; // 에러 배너가 떠 있으면 모드 전환으로 덮어쓰지 않는다
+  const isRangeBased = rangeMode !== 'cumulative';
+  const noRaw = isRangeBased && cafe24CreativeDaily.length === 0;
+  if(!isRangeBased){
+    bannerEl.innerHTML = `⏱️ 카페24 구매 데이터는 실시간 반영이 되지 않습니다. 아래 판단 기준(카페24 ROAS·구매)은 <b>${cafe24AsOfDate||'-'}</b> 기준 이번 달 누적 값입니다. Meta 자체 구매/ROAS는 참고용으로만 표시됩니다.`;
+  } else if(noRaw){
+    bannerEl.innerHTML = `⚠️ 선택하신 기간의 소재별 실시간 카페24 데이터가 아직 동기화되지 않았어요. Apps Script를 최신 버전으로 갱신 후 한 번 실행해주세요. (그동안은 "전체 누적" 탭으로 확인해주세요)`;
+  } else {
+    bannerEl.innerHTML = `⏱️ 아래 판단 기준(카페24 ROAS·구매)은 선택하신 기간(<b>${metaRange.since}${metaRange.since!==metaRange.until ? ' ~ '+metaRange.until : ''}</b>)의 실시간 합계입니다. Meta 자체 구매/ROAS는 참고용으로만 표시됩니다.`;
+  }
+}
+
 function renderCampaigns(){
+  updateCafe24Banner();
   const list = document.getElementById('campaignsList');
   const filtered = ads.filter(a=>{
     if(currentFilter==='on') return a.status==='ACTIVE';
@@ -311,6 +395,12 @@ function renderCampaigns(){
 
   const groups = groupByCampaign(filtered);
 
+  // '전체 누적' 모드는 이번 달 누적 스냅샷(cafe24Map)을, '오늘'/'기간 직접 설정' 모드는
+  // 소재별+일자별 raw 데이터를 선택된 기간만큼 직접 합산한 값을 쓴다.
+  const cafe24Source = (rangeMode === 'cumulative') ? cafe24Map : buildRangeCafe24Map(metaRange.since, metaRange.until);
+  const cafe24IsRangeBased = rangeMode !== 'cumulative';
+  const cafe24NoRawData = cafe24IsRangeBased && cafe24CreativeDaily.length === 0;
+
   list.innerHTML = groups.map(g=>{
     const spend = g.ads.reduce((s,a)=>s+a.spend,0);
     const impressions = g.ads.reduce((s,a)=>s+a.impressions,0);
@@ -318,14 +408,14 @@ function renderCampaigns(){
     const ctr = impressions>0 ? (clicks/impressions*100) : 0;
     const purchases = g.ads.reduce((s,a)=>s+(a.purchases||0),0);
 
-    // 카페24 누적치: "지금 Meta에 남아있는 소재"만 더하면, 이미 삭제/종료된 오래된 소재의
-    // 전환이 통째로 빠져서 시트의 캠페인 총계보다 훨씬 작게 나온다(실측 확인됨 — 예: 실제 15건인데
+    // 카페24 합계: "지금 Meta에 남아있는 소재"만 더하면, 이미 삭제/종료된 오래된 소재의 전환이
+    // 통째로 빠져서 시트의 캠페인 총계보다 훨씬 작게 나온다(실측 확인됨 — 예: 실제 15건인데
     // 1건으로 표시). 그래서 상단 요약은 "이 캠페인 이름과 일치하는 카페24 데이터 전체"를 기준으로
     // 합산한다 — 아래 개별 행은 지금 Meta에 있는 소재만 보이지만, 이 요약 숫자는 시트의 캠페인
-    // 총계 행과 일치해야 정상이다.
+    // 총계(누적 모드) 혹은 선택된 기간 합계(오늘/기간 직접 설정 모드)와 일치해야 정상이다.
     let cafe24SpendSum = 0, cafe24RevenueSum = 0, cafe24PurchasesSum = 0, cafe24CreativeCount = 0;
-    Object.keys(cafe24Map).forEach(name=>{
-      const c = cafe24Map[name];
+    Object.keys(cafe24Source).forEach(name=>{
+      const c = cafe24Source[name];
       if((c.campaign||'').trim() === (g.name||'').trim()){
         cafe24CreativeCount++;
         cafe24SpendSum += (c.spend||0);
@@ -338,10 +428,10 @@ function renderCampaigns(){
 
     // 지금 Meta에 살아있는 소재(표에 보이는 행) 중 카페24 매칭이 된 개수 — 표시용 참고 수치
     let cafe24Matched = 0;
-    g.ads.forEach(ad=>{ if(cafe24Map[ad.name]) cafe24Matched++; });
+    g.ads.forEach(ad=>{ if(cafe24Source[ad.name]) cafe24Matched++; });
 
     const rows = g.ads.map(ad=>{
-      const c24 = cafe24Map[ad.name];
+      const c24 = cafe24Source[ad.name];
       const sig = getSignal(ad, c24);
       const isOn = ad.status === 'ACTIVE';
       const cafe24Cell = c24
@@ -362,10 +452,16 @@ function renderCampaigns(){
         </tr>`;
     }).join('');
 
+    const cafe24LabelText = cafe24IsRangeBased
+      ? (cafe24NoRawData
+          ? '카페24 ROAS (소재별 실시간 데이터 아직 없음 — raw 동기화 필요)'
+          : `카페24 ROAS (${metaRange.since}${metaRange.since!==metaRange.until ? ' ~ '+metaRange.until : ''} 실시간 · 캠페인 전체 소재 ${cafe24CreativeCount}개 반영)`)
+      : `카페24 누적 ROAS (${cafe24AsOfDate||'기준일 미상'} 기준 · 이번 달 누적 · 캠페인 전체 소재 ${cafe24CreativeCount}개 반영)`;
+
     const cafe24Summary = `
       <div class="cafe24-summary">
         <div>
-          <div class="cafe24-summary-label">카페24 누적 ROAS (${cafe24AsOfDate||'기준일 미상'} 기준 · 캠페인 전체 소재 ${cafe24CreativeCount}개 반영)</div>
+          <div class="cafe24-summary-label">${cafe24LabelText}</div>
           <div class="cafe24-summary-roas ${roasClass}">${cafe24RoasAgg!=null ? cafe24RoasAgg.toFixed(1)+'%' : '데이터 없음'}</div>
         </div>
         <div class="cafe24-summary-sub">구매 <b>${cafe24PurchasesSum}건</b> · 구매값 <b>${formatKRW(cafe24RevenueSum)}</b>
@@ -439,13 +535,19 @@ function init(){
   renderCampaigns();
   updateStats();
   if(USE_META_API){
-    fetchMetaData();
+    setRangeMode('today'); // 기본값: 오늘(실시간) — 내부에서 fetchMetaData() 호출됨
     fetchCafe24Data();
   }
   setInterval(updateClock, 1000);
   setInterval(updateCountdown, 1000);
   setInterval(async ()=>{
     if(USE_META_API){
+      // '오늘'/'전체 누적' 모드는 자동 갱신 때마다 날짜를 다시 계산해서, 자정을 넘겨도 항상
+      // 진짜 "오늘"을 가리키게 한다('직접 설정' 모드는 사용자가 고른 기간을 그대로 유지)
+      if(rangeMode === 'today' || rangeMode === 'cumulative'){
+        const today = getKstTodayString();
+        metaRange = rangeMode === 'today' ? { since: today, until: today } : { since: '2024-01-01', until: today };
+      }
       await fetchMetaData();
       await fetchCafe24Data();
     }
