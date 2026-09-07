@@ -71,9 +71,11 @@
   .status-pill.on{ background:#e6f7e6; color:#27ae60; }
   .status-pill.off{ background:#f0f0f0; color:#888; }
   .signal{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:4px 10px; border-radius:12px; white-space:nowrap; }
+  .signal.winning{ background:#3a7cc9; color:#fff; }
   .signal.good{ background:#e4f0e6; color:#2f7d4f; }
   .signal.warn{ background:#f8ecd4; color:#a97417; }
   .signal.critical{ background:#fbe3e1; color:#c0392b; }
+  .signal.low-spend{ background:#eee; color:#888; }
   .signal.new{ background:#eee; color:#888; }
   .meta-ref-cell{ color:#aaa; font-size:11.5px; }
   .empty-state{ text-align:center; padding:50px 20px; color:#999; }
@@ -124,9 +126,15 @@
   </div>
 
   <div class="trend-block">
-    <h2>📈 최근 14일 일별 지출 · ROAS (카페24 기준)</h2>
+    <h2>📈 최근 14일 일별 지출 · ROAS (카페24 기준, 전체 채널)</h2>
     <div class="trend-sub" id="trendSub">불러오는 중…</div>
     <div class="trend-chart-wrap"><canvas id="dailyTrendChart"></canvas></div>
+  </div>
+
+  <div class="trend-block">
+    <h2>📈 최근 14일 Meta 전용 지출 · ROAS (카페24 기준)</h2>
+    <div class="trend-sub" id="trendSubMeta">불러오는 중…</div>
+    <div class="trend-chart-wrap"><canvas id="dailyTrendChartMeta"></canvas></div>
   </div>
 
   <div id="campaignsList"></div>
@@ -150,6 +158,7 @@ let cafe24Map = {};
 let cafe24AsOfDate = null; // 카페24 데이터가 실제로 반영된 마지막 날짜 (YYYY-MM-DD)
 let dailyTrend = []; // 계정 단위 일자별 추이 (최근 14일 그래프용)
 let dailyChart = null;
+let dailyChartMeta = null; // Meta 전용 그래프(위 dailyChart는 "9월 Summary" 계정 단위 표 기준이라 타 채널까지 섞여 있어서, Meta만 따로 뽑은 그래프를 아래에 별도로 보여준다)
 // 소재별+일자별 카페24 원본 (오늘/기간 직접 설정 모드에서 선택된 기간만큼 직접 합산해서 씀)
 let cafe24CreativeDaily = [];
 
@@ -323,6 +332,13 @@ async function fetchCafe24Data(){
     const sub = document.getElementById('trendSub');
     if(sub) sub.textContent = '그래프를 그리지 못했습니다 (' + chartErr.message + '). 데이터 자체는 정상입니다.';
   }
+  try{
+    renderDailyChartMeta();
+  }catch(chartErr){
+    console.error('❌ Meta 전용 그래프 렌더링 오류:', chartErr);
+    const sub = document.getElementById('trendSubMeta');
+    if(sub) sub.textContent = '그래프를 그리지 못했습니다 (' + chartErr.message + '). 데이터 자체는 정상입니다.';
+  }
 }
 
 function renderDailyChart(){
@@ -373,6 +389,73 @@ function renderDailyChart(){
   });
 }
 
+// 위 renderDailyChart()는 "X월 Summary"(계정 단위 일자별 성과) 탭 기준이라, 시트 쪽에서 그 탭이
+// Meta 외 다른 채널까지 합쳐서 집계하고 있으면 카페24 ROAS도 그 타 채널 매출까지 섞여서 나온다.
+// 이 그래프는 raw 탭에서 만든 cafe24CreativeDaily(추출 단계에서 이미 '매체'=meta 행만 남겨둠 —
+// cafe24-sync.gs의 extractRawCreativeDaily_ 참고)를 날짜별로 직접 합산해서, Meta 광고에서 발생한
+// 카페24 매출/구매만으로 지출·ROAS를 다시 계산한다.
+function renderDailyChartMeta(){
+  const sub = document.getElementById('trendSubMeta');
+
+  if(typeof Chart === 'undefined'){
+    if(sub) sub.textContent = '그래프 라이브러리(Chart.js)를 불러오지 못했습니다. 인터넷 연결 상태를 확인하거나 새로고침 해주세요. (표/기준일 데이터는 정상입니다)';
+    return;
+  }
+
+  if(cafe24CreativeDaily.length === 0){
+    if(sub) sub.textContent = '소재별+일자별 raw 데이터(9월 raw 탭 동기화)가 아직 없어서 Meta 전용 그래프는 못 그려요. 전체 채널 그래프는 위에서 계속 보여드려요.';
+    if(dailyChartMeta){ dailyChartMeta.destroy(); dailyChartMeta = null; }
+    return;
+  }
+
+  // 날짜별로 소재 구분 없이 합산 (매체는 이미 raw 추출 단계에서 meta로 한정되어 있음)
+  const byDate = {};
+  cafe24CreativeDaily.forEach(row=>{
+    if(!byDate[row.date]) byDate[row.date] = { date: row.date, spend:0, cafe24Purchases:0, cafe24Revenue:0 };
+    const d = byDate[row.date];
+    d.spend += row.spend||0;
+    d.cafe24Purchases += row.cafe24Purchases||0;
+    d.cafe24Revenue += row.cafe24Revenue||0;
+  });
+  const daily = Object.values(byDate).sort((a,b)=> a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  const last14 = daily.slice(-14);
+
+  if(last14.length === 0){
+    if(sub) sub.textContent = '표시할 일자별 데이터가 아직 없습니다 (Apps Script 동기화 후 반영됩니다).';
+    if(dailyChartMeta){ dailyChartMeta.destroy(); dailyChartMeta = null; }
+    return;
+  }
+
+  if(sub) sub.textContent = `${last14[0].date} ~ ${last14[last14.length-1].date} · Meta 광고 소재의 카페24 매출만으로 계산한 지출·ROAS입니다.`;
+
+  const labels = last14.map(d=>d.date.slice(5));
+  const spendData = last14.map(d=>d.spend);
+  // ROAS 계산은 시트의 raw 피벗표 공식과 맞춘다: =IFERROR(('구매값(카페24)'*1.1)/('비용'*1.15),0)
+  const roasData = last14.map(d=> d.spend>0 ? (d.cafe24Revenue*1.1)/(d.spend*1.15)*100 : null);
+
+  const ctx = document.getElementById('dailyTrendChartMeta').getContext('2d');
+  if(dailyChartMeta) dailyChartMeta.destroy();
+  dailyChartMeta = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        { type:'bar', label:'지출(Meta)', data: spendData, backgroundColor:'rgba(58,124,201,0.55)', yAxisID:'ySpend', borderRadius:4, order:2 },
+        { type:'line', label:'카페24 ROAS(Meta 전용)', data: roasData, borderColor:'#1f9d6c', backgroundColor:'#1f9d6c', yAxisID:'yRoas', tension:0.3, pointRadius:3, order:1 }
+      ]
+    },
+    options: {
+      responsive:true,
+      maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      scales:{
+        ySpend:{ position:'left', ticks:{ callback:v=>Math.round(v/10000)+'만원' } },
+        yRoas:{ position:'right', grid:{ drawOnChartArea:false }, ticks:{ callback:v=>v+'%' } }
+      },
+      plugins:{ legend:{ position:'top' } }
+    }
+  });
+}
+
 // 카페24 "누적" 조회기간 적용 — Meta를 다시 불러오지 않고(가벼움), 이미 받아둔 소재별+일자별
 // 카페24 원본(cafe24CreativeDaily)을 그 기간만큼 다시 합산해서 화면만 갱신한다.
 function applyCafe24Range(){
@@ -384,15 +467,24 @@ function applyCafe24Range(){
   fetchMetaCumulativeData(); // 지출/노출/클릭/CTR/CPC의 "누적" 값도 새로 설정한 기간으로 다시 불러온다
 }
 
-// 신호등은 카페24 ROAS 기준(100% 미만이면 경고)으로 판단한다. Meta 자체 구매/ROAS는 참고용일 뿐 판단에 쓰지 않는다.
+// 신호등 기준(전부 "누적" 기준 판단, Meta 자체 구매/ROAS는 참고용일 뿐 판단에 쓰지 않는다):
+//  - 누적 소진 19만원 미만                                        → 소액 소진 (판단 보류)
+//  - 누적 소진 19만원 이상 + ROAS 100% 미만                        → 경고
+//  - 누적 소진 19만원 이상 + ROAS 100% 이상                        → FINE
+//  - 누적 소진 19만원 이상 + ROAS 150% 이상 + 누적 전환 5건 이상     → 위닝 (FINE보다 상위 등급)
+const SIGNAL_SPEND_THRESHOLD = 190000;
 function getSignal(ad, c24){
   if(!c24) return {cls:'new', label:'카페24 미매칭'};
+  const spend = c24.spend || 0;
+  if(spend < SIGNAL_SPEND_THRESHOLD) return {cls:'low-spend', label:'소액 소진 (' + formatKRW(spend) + ')'};
   if(c24.cafe24Roas === null || c24.cafe24Roas === undefined){
-    if(ad.impressions === 0 && c24.spend === 0) return {cls:'new', label:'신규(집계중)'};
     return {cls:'warn', label:'카페24 ROAS 없음'};
   }
-  if(c24.cafe24Roas >= 100) return {cls:'good', label:'양호 ' + c24.cafe24Roas.toFixed(1) + '%'};
-  return {cls:'critical', label:'경고 ' + c24.cafe24Roas.toFixed(1) + '%'};
+  const roas = c24.cafe24Roas;
+  const purchases = c24.cafe24Purchases || 0;
+  if(roas >= 150 && purchases >= 5) return {cls:'winning', label:'위닝 ' + roas.toFixed(1) + '%'};
+  if(roas >= 100) return {cls:'good', label:'FINE ' + roas.toFixed(1) + '%'};
+  return {cls:'critical', label:'경고 ' + roas.toFixed(1) + '%'};
 }
 
 let currentFilter = 'all';
@@ -454,6 +546,11 @@ function renderCampaigns(){
   // 예전 방식(이번 달 누적 스냅샷)으로 대체한다.
   const cafe24NoRawData = cafe24CreativeDaily.length === 0;
   const cafe24Cumulative = cafe24NoRawData ? cafe24Map : buildRangeCafe24Map(cafe24RangeSince, cafe24RangeUntil);
+  // 신호등 판단 전용 "소재 생성 이후 전체 누적" — 화면에 표시되는 "누적"(위 cafe24Cumulative)은
+  // 사용자가 설정한 조회기간에 따라 자유롭게 좁아지거나 넓어지는데, 신호등의 19만원/ROAS/5건 기준은
+  // 조회기간과 무관하게 그 소재가 raw 데이터에 처음 등장한 날부터 지금까지의 전체 누적으로 판단한다
+  // (조회기간을 짧게 잡을 때마다 잘 나가던 소재가 "소액 소진"으로 잘못 표시되는 걸 막기 위함).
+  const cafe24AllTime = cafe24NoRawData ? cafe24Map : buildRangeCafe24Map('0001-01-01', '9999-12-31');
 
   // 캠페인 이름이 일치하는 카페24 데이터 전체를 합산한다("지금 Meta에 남아있는 소재"만 더하면
   // 이미 삭제/종료된 오래된 소재의 전환이 빠져서 시트의 캠페인 총계보다 작게 나오는 문제가 있었음).
@@ -524,9 +621,10 @@ function renderCampaigns(){
       const c24r = cafe24Realtime[cafe24Key_(ad.campaign_name, ad.name)];
       const c24y = cafe24Yesterday[cafe24Key_(ad.campaign_name, ad.name)];
       const c24c = cafe24Cumulative[cafe24Key_(ad.campaign_name, ad.name)];
+      const c24all = cafe24AllTime[cafe24Key_(ad.campaign_name, ad.name)];
       const mcR = metaRealtimeMap[ad.id]; // 이 소재의 Meta 실시간(오늘, 참고) 지표 — 없으면 '-'
       const mcC = metaCumulativeMap[ad.id]; // 이 소재의 Meta 누적(참고) 지표 — 없으면 '-'
-      const sig = getSignal(ad, c24c); // 신호등은 '누적' 기준으로 판단 (하루치는 표본이 작아 들쭉날쭉함)
+      const sig = getSignal(ad, c24all); // 신호등은 조회기간과 무관한 "소재 생성 이후 전체 누적" 기준으로 판단
       const isOn = ad.status === 'ACTIVE';
       const fmtCafe = (c)=> c ? `${c.cafe24Purchases}건/${formatKRW(c.cafe24Revenue)}` : '-';
       const fmtRoas = (c)=> (c && c.cafe24Roas!=null) ? c.cafe24Roas.toFixed(1)+'%' : '-';
@@ -609,7 +707,7 @@ function renderCampaigns(){
         <div class="ad-table">
           <table>
             <thead><tr>
-              <th>소재명</th><th>게재상태</th><th>지출</th><th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th><th>구매/구매값(카페24)</th><th>ROAS(카페24)</th><th>신호등(카페24 누적 기준)</th><th>Meta 참고</th>
+              <th>소재명</th><th>게재상태</th><th>지출</th><th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th><th>구매/구매값(카페24)</th><th>ROAS(카페24)</th><th>신호등(소재 생성 이후 전체 누적 기준)</th><th>Meta 참고</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
