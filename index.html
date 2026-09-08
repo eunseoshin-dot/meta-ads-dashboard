@@ -169,19 +169,41 @@ let cafe24CreativeDaily = [];
 // 같은 소재명이 "전체"/"리타겟"처럼 서로 다른 캠페인에 동시에 살아있는 경우가 많아서,
 // 소재명만으로는 두 캠페인의 카페24 값을 구분할 수 없다(합쳐지거나 한쪽에만 잡히는 문제 발생).
 // 그래서 맵 키를 "캠페인+소재명" 조합으로 써서 캠페인별로 완전히 분리해서 저장한다.
+// (이 키는 "이 캠페인 안에서 이 소재가 어떤 광고그룹에서 돌았든 전부 합친" 값을 가리킬 때 쓴다 —
+//  신호등/경고배너/캠페인 합계처럼 "소재 자체"의 전체 성과가 필요한 곳.)
 function cafe24Key_(campaign, creative){
   return (campaign||'').trim() + '::' + (creative||'').trim();
 }
 
-// cafe24CreativeDaily에서 since~until(둘 다 포함) 기간에 해당하는 것만 "캠페인+소재명" 기준으로
-// 합산한 맵을 만든다. '전일자'/'누적' 두 값 모두 같은 방식으로 만들어서 표시 방식을 통일한다.
+// 같은 소재가 한 캠페인 안에서도 여러 "광고그룹"(예: 전체_1865_리타겟 / 전체_2554_전체처럼 타겟팅
+// 세그먼트가 다른 광고그룹)에 동시에 걸쳐 돌 수 있다 — 이건 raw 시트가 정상적으로 나눠서 기록한
+// 것이지 중복이 아니다. Meta의 광고 하나(ad)는 캠페인+광고그룹+소재 조합 하나에 대응하므로, 표의
+// 한 "행"(=Meta 광고 하나)에 정확히 대응하는 카페24 값을 찾으려면 광고그룹까지 포함한 키가 필요하다
+// (광고그룹을 빼고 캠페인+소재로만 찾으면, 같은 소재의 여러 광고그룹 몫이 전부 합쳐진 값이 그 소재의
+//  "광고 하나"에만 표시되어 그 행의 지출과 안 맞아 보이는 문제가 생긴다).
+function cafe24AdsetKey_(campaign, adset, creative){
+  return (campaign||'').trim() + '::' + (adset||'').trim() + '::' + (creative||'').trim();
+}
+
+// cafe24CreativeDaily에서 since~until(둘 다 포함) 기간에 해당하는 것만 "캠페인+광고그룹+소재명" 기준
+// (=Meta 광고 하나와 정확히 같은 범위)으로 합산한 맵을 만든다. '전일자'/'누적' 두 값 모두 같은 방식으로
+// 만들어서 표시 방식을 통일한다. 각 항목은 cafe24Key_로도 다시 찾을 수 있게 campaign/creative를 담는다.
 function buildRangeCafe24Map(since, until){
   const map = {};
   if(!since || !until) return map;
+  // raw 시트에 완전히 똑같은 "일자+캠페인+광고그룹+소재" 조합의 행이 중복으로 들어있는 경우가 있어서
+  // (재피벗/재붙여넣기 등), 그런 완전 중복 행만 마지막에 나온 값으로 대체(합산 X)하고 나서 기간 합산한다.
+  // 광고그룹까지 키에 포함하므로, 같은 소재가 여러 광고그룹에 정상적으로 나뉜 행들은 중복으로 오인되지
+  // 않고 각각 그대로 살아남는다.
+  const dedup = {};
   cafe24CreativeDaily.forEach(row=>{
     if(row.date < since || row.date > until) return;
-    const key = cafe24Key_(row.campaign, row.creative);
-    if(!map[key]) map[key] = { campaign: row.campaign, creative: row.creative, spend:0, cafe24Purchases:0, cafe24Revenue:0 };
+    const dayKey = row.date + '::' + cafe24AdsetKey_(row.campaign, row.adset, row.creative);
+    dedup[dayKey] = row; // 완전히 같은 조합만 마지막 행 값으로 대체(합산 아님)
+  });
+  Object.values(dedup).forEach(row=>{
+    const key = cafe24AdsetKey_(row.campaign, row.adset, row.creative);
+    if(!map[key]) map[key] = { campaign: row.campaign, adset: row.adset, creative: row.creative, spend:0, cafe24Purchases:0, cafe24Revenue:0 };
     const m = map[key];
     m.spend += row.spend||0;
     m.cafe24Purchases += row.cafe24Purchases||0;
@@ -193,6 +215,26 @@ function buildRangeCafe24Map(since, until){
     m.cafe24Roas = m.spend>0 ? (m.cafe24Revenue*1.1)/(m.spend*1.15)*100 : null;
   });
   return map;
+}
+
+// 광고그룹별로 나뉜 buildRangeCafe24Map 결과를 "캠페인+소재명" 기준으로 다시 합쳐서, 이 소재가
+// 이 캠페인 안에서 어떤 광고그룹으로 돌았든 전부 합친 값을 만든다. 신호등/경고배너처럼 "소재 자체"의
+// 전체 누적 성과가 필요한 곳에서 쓴다(어느 한 광고그룹의 광고 하나로 좁히면 안 되는 곳).
+function rollupCafe24ByCreative_(adsetMap){
+  const out = {};
+  Object.values(adsetMap).forEach(e=>{
+    const key = cafe24Key_(e.campaign, e.creative);
+    if(!out[key]) out[key] = { campaign: e.campaign, creative: e.creative, spend:0, cafe24Purchases:0, cafe24Revenue:0 };
+    const o = out[key];
+    o.spend += e.spend||0;
+    o.cafe24Purchases += e.cafe24Purchases||0;
+    o.cafe24Revenue += e.cafe24Revenue||0;
+  });
+  Object.keys(out).forEach(key=>{
+    const o = out[key];
+    o.cafe24Roas = o.spend>0 ? (o.cafe24Revenue*1.1)/(o.spend*1.15)*100 : null;
+  });
+  return out;
 }
 
 // Meta 참고 지표는 항상 "전일자(어제)" 고정 — 무거운 장기간 조회를 아예 없앴다.
@@ -559,7 +601,9 @@ function renderCampaigns(){
   // 사용자가 설정한 조회기간에 따라 자유롭게 좁아지거나 넓어지는데, 신호등의 19만원/ROAS/5건 기준은
   // 조회기간과 무관하게 그 소재가 raw 데이터에 처음 등장한 날부터 지금까지의 전체 누적으로 판단한다
   // (조회기간을 짧게 잡을 때마다 잘 나가던 소재가 "소액 소진"으로 잘못 표시되는 걸 막기 위함).
-  const cafe24AllTime = cafe24NoRawData ? cafe24Map : buildRangeCafe24Map('0001-01-01', '9999-12-31');
+  // buildRangeCafe24Map은 이제 "캠페인+광고그룹+소재" 단위로 나뉘어 나오므로, 신호등처럼 "소재 자체"의
+  // 전체 성과가 필요한 곳에서는 광고그룹을 다시 합쳐야 한다(rollupCafe24ByCreative_).
+  const cafe24AllTime = cafe24NoRawData ? cafe24Map : rollupCafe24ByCreative_(buildRangeCafe24Map('0001-01-01', '9999-12-31'));
 
   // 상단 경고 배너 — 지금 필터/탭 설정과 무관하게, "게재중"이면서 신호등이 "경고"인 소재가
   // 하나라도 있으면 항상 눈에 띄게 알려준다(전체 ads 기준으로 계산, filtered 이후가 아니라).
@@ -609,15 +653,19 @@ function renderCampaigns(){
   function aggregateForCampaign(source, campaignName, campaignAds){
     let spendSum=0, revenueSum=0, purchasesSum=0;
     const countedKeys = new Set();
+    const creativeNames = new Set(); // 광고그룹이 여러 개라도 소재 개수는 "소재명" 기준으로만 센다
 
-    // 1순위: 이 캠페인에 실제로 떠 있는 소재는 "캠페인+소재명" 조합키로 화면 행과 완전히 같은 방식으로 매칭.
-    // (같은 소재명이 다른 캠페인에도 동시에 있을 수 있어서, 소재명만으로 매칭하면 서로 섞여버린다)
+    // 1순위: 이 캠페인에 실제로 떠 있는 소재는 "캠페인+광고그룹+소재명" 조합키로, 화면 행(=Meta 광고
+    // 하나)과 완전히 같은 범위로 매칭한다(같은 소재가 여러 광고그룹에 걸쳐 있어도 각 광고그룹 몫을
+    // 각각 정확히 찾아서 더한다). source가 예전 방식(캠페인::소재만 있는 legacy 스냅샷)이면 이 키로는
+    // 못 찾으므로 자연스럽게 2순위로 넘어간다.
     (campaignAds||[]).forEach(ad=>{
-      const key = cafe24Key_(campaignName, ad.name);
+      const key = cafe24AdsetKey_(campaignName, ad.adset_name, ad.name);
       if(countedKeys.has(key)) return;
       const c = source[key];
       if(!c) return;
       countedKeys.add(key);
+      creativeNames.add(ad.name);
       spendSum += (c.spend||0);
       revenueSum += (c.cafe24Revenue||0);
       purchasesSum += (c.cafe24Purchases||0);
@@ -630,6 +678,7 @@ function renderCampaigns(){
       const c = source[key];
       if((c.campaign||'').trim() !== (campaignName||'').trim()) return;
       countedKeys.add(key);
+      creativeNames.add(c.creative);
       spendSum += (c.spend||0);
       revenueSum += (c.cafe24Revenue||0);
       purchasesSum += (c.cafe24Purchases||0);
@@ -637,7 +686,7 @@ function renderCampaigns(){
 
     // ROAS 계산은 시트의 raw 피벗표 공식과 맞춘다: =IFERROR(('구매값(카페24)'*1.1)/('비용'*1.15),0)
     const roas = spendSum>0 ? (revenueSum*1.1)/(spendSum*1.15)*100 : null;
-    return { spend:spendSum, revenue:revenueSum, purchases:purchasesSum, creativeCount: countedKeys.size, roas };
+    return { spend:spendSum, revenue:revenueSum, purchases:purchasesSum, creativeCount: creativeNames.size, roas };
   }
 
   list.innerHTML = groups.map(g=>{
@@ -672,10 +721,15 @@ function renderCampaigns(){
     });
 
     const rows = sortedAds.map(ad=>{
-      const c24r = cafe24Realtime[cafe24Key_(ad.campaign_name, ad.name)];
-      const c24y = cafe24Yesterday[cafe24Key_(ad.campaign_name, ad.name)];
-      const c24c = cafe24Cumulative[cafe24Key_(ad.campaign_name, ad.name)];
-      const c24all = cafe24AllTime[cafe24Key_(ad.campaign_name, ad.name)];
+      // 실시간/전일자는 항상 buildRangeCafe24Map(=캠페인+광고그룹+소재 단위) 결과라서 광고그룹까지
+      // 포함한 키로 찾아야, 이 소재가 다른 광고그룹에도 걸쳐 있을 때 이 광고(행) 자기 몫만 정확히
+      // 표시된다. 누적은 raw 동기화 전이면 예전 방식(캠페인::소재만 있는 legacy 스냅샷)으로 대체되므로
+      // 그 경우엔 광고그룹 없는 키로 찾는다.
+      const adsetKey = cafe24AdsetKey_(ad.campaign_name, ad.adset_name, ad.name);
+      const c24r = cafe24Realtime[adsetKey];
+      const c24y = cafe24Yesterday[adsetKey];
+      const c24c = cafe24NoRawData ? cafe24Cumulative[cafe24Key_(ad.campaign_name, ad.name)] : cafe24Cumulative[adsetKey];
+      const c24all = cafe24AllTime[cafe24Key_(ad.campaign_name, ad.name)]; // 신호등은 광고그룹 무관 소재 전체 누적
       const mcR = metaRealtimeMap[ad.id]; // 이 소재의 Meta 실시간(오늘, 참고) 지표 — 없으면 '-'
       const mcC = metaCumulativeMap[ad.id]; // 이 소재의 Meta 누적(참고) 지표 — 없으면 '-'
       const sig = getSignal(ad, c24all); // 신호등은 조회기간과 무관한 "소재 생성 이후 전체 누적" 기준으로 판단
