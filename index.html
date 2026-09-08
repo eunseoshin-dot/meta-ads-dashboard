@@ -169,13 +169,6 @@ let cafe24CreativeDaily = [];
 // 같은 소재명이 "전체"/"리타겟"처럼 서로 다른 캠페인에 동시에 살아있는 경우가 많아서,
 // 소재명만으로는 두 캠페인의 카페24 값을 구분할 수 없다(합쳐지거나 한쪽에만 잡히는 문제 발생).
 // 그래서 맵 키를 "캠페인+소재명" 조합으로 써서 캠페인별로 완전히 분리해서 저장한다.
-//
-// (한때 "광고그룹(adset)"까지 포함한 키로 더 잘게 쪼개봤는데 되돌렸다 — 카페24 전환은 클릭이 발생한
-// 날과 다른 날에 뒤늦게 잡히는 "귀속 지연" 행이 있고, 그런 행은 raw 시트에 지출이 찍힌 행과 항상
-// 같은 광고그룹 값으로 안 남아있어서, 광고그룹으로 쪼개면 오히려 지출과 매출이 서로 다른 행으로
-// 흩어져 ROAS가 "-"로 비거나 비정상적으로 튀는 문제가 생겼다. 그래서 "캠페인+소재"까지만 묶고,
-// 그 안의 광고그룹 차이는 다시 합쳐서 본다 — 대신 "지출 누적"(Meta, 광고 하나 단위)과 "구매/ROAS
-// 누적"(카페24, 이 캠페인 안 소재 전체 합산)은 서로 범위가 다를 수 있다는 점은 감안해야 한다.)
 function cafe24Key_(campaign, creative){
   return (campaign||'').trim() + '::' + (creative||'').trim();
 }
@@ -185,16 +178,8 @@ function cafe24Key_(campaign, creative){
 function buildRangeCafe24Map(since, until){
   const map = {};
   if(!since || !until) return map;
-  // raw 시트에 완전히 똑같은 "일자+캠페인+광고그룹+소재" 조합의 행이 중복으로 들어있는 경우가 있어서
-  // (재피벗/재붙여넣기 등), 그런 완전 중복 행만 마지막에 나온 값으로 대체(합산 X)하고 나서, 광고그룹은
-  // 다시 무시하고 "캠페인+소재" 기준으로 합산한다(위 cafe24Key_ 주석 참고).
-  const dedup = {};
   cafe24CreativeDaily.forEach(row=>{
     if(row.date < since || row.date > until) return;
-    const dayKey = row.date + '::' + cafe24Key_(row.campaign, row.creative) + '::' + (row.adset||'');
-    dedup[dayKey] = row; // 완전히 같은 조합(광고그룹까지)만 마지막 행 값으로 대체(합산 아님)
-  });
-  Object.values(dedup).forEach(row=>{
     const key = cafe24Key_(row.campaign, row.creative);
     if(!map[key]) map[key] = { campaign: row.campaign, creative: row.creative, spend:0, cafe24Purchases:0, cafe24Revenue:0 };
     const m = map[key];
@@ -630,19 +615,15 @@ function renderCampaigns(){
   function aggregateForCampaign(source, campaignName, campaignAds){
     let spendSum=0, revenueSum=0, purchasesSum=0;
     const countedKeys = new Set();
-    const creativeNames = new Set(); // 광고그룹이 여러 개라도 소재 개수는 "소재명" 기준으로만 센다
 
     // 1순위: 이 캠페인에 실제로 떠 있는 소재는 "캠페인+소재명" 조합키로 화면 행과 완전히 같은 방식으로 매칭.
-    // (같은 소재명이 다른 캠페인에도 동시에 있을 수 있어서, 소재명만으로 매칭하면 서로 섞여버린다.
-    //  같은 소재가 이 캠페인 안에서 여러 광고그룹에 걸쳐 여러 Meta 광고로 나와도 키는 하나라서,
-    //  두 번째 광고부터는 countedKeys에 걸려 건너뛴다 — 이미 그 소재의 카페24 합계를 한 번 셌으므로.)
+    // (같은 소재명이 다른 캠페인에도 동시에 있을 수 있어서, 소재명만으로 매칭하면 서로 섞여버린다)
     (campaignAds||[]).forEach(ad=>{
       const key = cafe24Key_(campaignName, ad.name);
       if(countedKeys.has(key)) return;
       const c = source[key];
       if(!c) return;
       countedKeys.add(key);
-      creativeNames.add(ad.name);
       spendSum += (c.spend||0);
       revenueSum += (c.cafe24Revenue||0);
       purchasesSum += (c.cafe24Purchases||0);
@@ -655,7 +636,6 @@ function renderCampaigns(){
       const c = source[key];
       if((c.campaign||'').trim() !== (campaignName||'').trim()) return;
       countedKeys.add(key);
-      creativeNames.add(c.creative);
       spendSum += (c.spend||0);
       revenueSum += (c.cafe24Revenue||0);
       purchasesSum += (c.cafe24Purchases||0);
@@ -663,7 +643,7 @@ function renderCampaigns(){
 
     // ROAS 계산은 시트의 raw 피벗표 공식과 맞춘다: =IFERROR(('구매값(카페24)'*1.1)/('비용'*1.15),0)
     const roas = spendSum>0 ? (revenueSum*1.1)/(spendSum*1.15)*100 : null;
-    return { spend:spendSum, revenue:revenueSum, purchases:purchasesSum, creativeCount: creativeNames.size, roas };
+    return { spend:spendSum, revenue:revenueSum, purchases:purchasesSum, creativeCount: countedKeys.size, roas };
   }
 
   list.innerHTML = groups.map(g=>{
@@ -698,10 +678,6 @@ function renderCampaigns(){
     });
 
     const rows = sortedAds.map(ad=>{
-      // 카페24 값은 "캠페인+소재명" 기준(광고그룹 무관, 위 cafe24Key_ 주석 참고) — 같은 소재가 이
-      // 캠페인 안에서 여러 광고그룹의 여러 Meta 광고로 나와도, 그 행들은 전부 같은 카페24 값을
-      // 보여준다(그 소재가 이 캠페인에서 낸 성과 전체). Meta 지출/노출/클릭 등은 반대로 각 광고(행)
-      // 자기 자신의 값만 보여주므로, 지출과 카페24 값의 "범위"가 다를 수 있다는 점은 감안해야 한다.
       const c24r = cafe24Realtime[cafe24Key_(ad.campaign_name, ad.name)];
       const c24y = cafe24Yesterday[cafe24Key_(ad.campaign_name, ad.name)];
       const c24c = cafe24Cumulative[cafe24Key_(ad.campaign_name, ad.name)];
