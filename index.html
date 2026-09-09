@@ -124,7 +124,7 @@
       <div class="stat-box"><div class="stat-number" id="totalAds">0</div><div class="stat-label">전체 소재</div></div>
       <div class="stat-box"><div class="stat-number" id="activeAds">0</div><div class="stat-label">게재 중</div></div>
       <div class="stat-box"><div class="stat-number" id="inactiveAds">0</div><div class="stat-label">중지</div></div>
-      <div class="stat-box"><div class="stat-number" id="totalSpend">0원</div><div class="stat-label">총 지출(Meta)</div></div>
+      <div class="stat-box"><div class="stat-number" id="totalSpend">0원</div><div class="stat-label">총 지출(실시간)</div></div>
     </div>
     <div class="refresh-info">백그라운드 자동 갱신은 꺼져 있어요 — 새로고침(F5)할 때마다 그 순간의 최신 데이터를 다시 불러와요.</div>
   </div>
@@ -267,6 +267,7 @@ async function fetchMetaRealtimeData(){
     (data.ads||[]).forEach(a=>{ metaRealtimeMap[a.id] = a; });
     console.log('✅ Meta 실시간(오늘) 지표 로드:', (data.ads||[]).length, '개 소재');
     renderCampaigns();
+    updateStats(); // 상단 "총 지출(실시간)" 카드가 이 데이터로 갱신되게
   }catch(err){
     console.error('❌ Meta 실시간(오늘) 지표 로드 오류:', err);
   }
@@ -783,7 +784,12 @@ function updateStats(){
   const total = active_ads.length;
   const active = active_ads.filter(a=>getDeliveryStatus(a).isOn).length;
   const inactive = total - active;
-  const totalSpend = active_ads.reduce((s,a)=>s+a.spend,0);
+  // 총 지출 카드는 실시간(오늘, 아직 안 끝난 하루치) 지출을 보여준다 — metaRealtimeMap이 아직 안
+  // 불러와졌으면(fetchMetaRealtimeData 완료 전) 일단 0으로 표시되고, 로드되면 다시 갱신된다.
+  const totalSpend = active_ads.reduce((s,a)=>{
+    const rt = metaRealtimeMap[a.id];
+    return s + (rt ? rt.spend : 0);
+  }, 0);
   document.getElementById('totalAds').textContent = total;
   document.getElementById('activeAds').textContent = active;
   document.getElementById('inactiveAds').textContent = inactive;
